@@ -51,3 +51,14 @@ def checkout_branch(repo_path: str, branch_name: str) -> str:
 
 def create_branch(repo_path: str, branch_name: str) -> str:
     return run_git_command(repo_path, ["checkout", "-b", branch_name])
+
+
+def has_upstream(repo_path: str, branch_name: str) -> bool:
+    try:
+        output = run_git_command(
+            repo_path,
+            ["rev-parse", "--abbrev-ref", f"{branch_name}@{{upstream}}"]
+        )
+        return bool(output.strip())
+    except GitServiceError:
+        return False

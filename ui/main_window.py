@@ -262,8 +262,13 @@ class MainWindow(ctk.CTk):
 
             elif action_name == "Push":
                 result = git_push(self.selected_repo_path)
+                current_branch = get_current_branch(self.selected_repo_path)
+                self.sync_branch_ui(current_branch)
                 self.set_status("Push executado com sucesso.")
-                messagebox.showinfo("Push", result or "Push executado com sucesso.")
+                messagebox.showinfo(
+                    "Push",
+                    result or f"Push executado com sucesso para a branch {current_branch}."
+                )
 
             elif action_name == "Branch":
                 branch_name = simpledialog.askstring("Criar branch", "Digite o nome da nova branch:")
