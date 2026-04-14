@@ -4,7 +4,7 @@ from ui.theme import APP_COLORS, load_icon
 
 
 class TopBar(ctk.CTkFrame):
-    def __init__(self, master, on_select_repo, on_action):
+    def __init__(self, master, on_select_repo, on_action, on_branch_change=None):
         super().__init__(
             master,
             fg_color=APP_COLORS["topbar"],
@@ -14,6 +14,7 @@ class TopBar(ctk.CTkFrame):
 
         self.on_select_repo = on_select_repo
         self.on_action = on_action
+        self.on_branch_change = on_branch_change
 
         self.repo_var = ctk.StringVar(value="Selecione um repositório")
         self.branch_var = ctk.StringVar(value="main")
@@ -79,7 +80,8 @@ class TopBar(ctk.CTkFrame):
             button_hover_color="#5b6472",
             text_color=APP_COLORS["text"],
             corner_radius=8,
-            font=ctk.CTkFont(size=13)
+            font=ctk.CTkFont(size=13),
+            command=self._handle_branch_menu_change
         )
         self.branch_menu.grid(row=1, column=2, padx=(0, 8), pady=(4, 0))
 
@@ -182,3 +184,10 @@ class TopBar(ctk.CTkFrame):
 
     def get_selected_branch(self) -> str:
         return self.branch_var.get()
+
+    def _handle_branch_menu_change(self, selected_branch: str):
+        if self.on_branch_change:
+            self.on_branch_change(selected_branch)
+
+    def set_selected_branch(self, branch_name: str):
+        self.branch_var.set(branch_name)
