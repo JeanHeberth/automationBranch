@@ -2,12 +2,20 @@ import os
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
 
+from services.git_service import (
+    get_local_branches,
+    get_current_branch,
+    get_recent_commits,
+    is_git_repository,
+    checkout_branch,
+    GitServiceError,
+)
+
 from ui.top_bar import TopBar
 from ui.left_sidebar import LeftSidebar
 from ui.center_panel import CenterPanel
 from ui.right_panel import RightPanel
 from ui.theme import APP_COLORS
-
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
@@ -137,11 +145,10 @@ class MainWindow(ctk.CTk):
         if not folder:
             return
 
-        git_folder = os.path.join(folder, ".git")
-        if not os.path.isdir(git_folder):
+        if not is_git_repository(folder):
             messagebox.showwarning(
                 "Repositório inválido",
-                "A pasta selecionada não parece ser um repositório Git."
+                "A pasta selecionada não parece ser um repositório Git válido."
             )
             return
 
@@ -152,20 +159,20 @@ class MainWindow(ctk.CTk):
         repo_names = list(self.repositories.keys())
         self.top_bar.set_repositories(repo_names, repo_name)
 
-        self.set_status(f"Repositório selecionado: {repo_name} ({folder})")
+        try:
+            current_branch = get_current_branch(folder)
 
-        self.top_bar.set_branches(["main", "develop", "feature/nova-ui"], "main")
-        self.left_sidebar.set_branches(["main", "develop", "feature/nova-ui"])
-        self.center_panel.set_commits([
-            f"Repositório {repo_name} carregado",
-            "Commit de exemplo 1",
-            "Commit de exemplo 2",
-        ])
-        self.right_panel.set_files([
-            "README.md",
-            "src/main.py",
-            "ui/top_bar.py",
-        ])
+            self.sync_branch_ui(current_branch)
+
+            self.right_panel.set_files([
+                ".git/config",
+                ".git/HEAD",
+            ])
+
+            self.set_status(f"Repositório selecionado: {repo_name} ({folder})")
+
+        except GitServiceError as exc:
+            messagebox.showerror("Erro Git", str(exc))
 
     def set_status(self, text: str):
         self.status_label.configure(text=text)
@@ -198,80 +205,88 @@ class MainWindow(ctk.CTk):
         elif action_name == "Refresh":
             messagebox.showinfo("Refresh", "Atualização ainda será implementada.")
 
-    def handle_select_repository(self):
-        folder = filedialog.askdirectory(title="Selecionar repositório")
-
-        if not folder:
-            return
-
-        git_folder = os.path.join(folder, ".git")
-        if not os.path.isdir(git_folder):
-            messagebox.showwarning(
-                "Repositório inválido",
-                "A pasta selecionada não parece ser um repositório Git."
-            )
-            return
-
-        repo_name = os.path.basename(folder)
-        self.repositories[repo_name] = folder
-        self.selected_repo_path = folder
-
-        repo_names = list(self.repositories.keys())
-        self.top_bar.set_repositories(repo_names, repo_name)
-
-        self.set_status(f"Repositório selecionado: {repo_name} ({folder})")
-
-        # dados temporários até conectarmos com git real
-        self.top_bar.set_branches(["main", "develop", "feature/nova-ui"], "main")
-        self.left_sidebar.set_branches(["main", "develop", "feature/nova-ui"])
-        self.center_panel.set_commits([
-            f"Repositório {repo_name} carregado",
-            "Commit de exemplo 1",
-            "Commit de exemplo 2",
-        ])
-        self.right_panel.set_files([
-            "README.md",
-            "src/main.py",
-            "ui/top_bar.py",
-        ])
-
     def handle_branch_selected(self, branch_name: str):
         self.set_status(f"Branch selecionada: {branch_name}")
 
         current_branches = self.left_sidebar.all_branches[:] if self.left_sidebar.all_branches else [branch_name]
 
-        if branch_name not in current_branches:
-            current_branches.insert(0, branch_name)
-
         self.top_bar.set_branches(current_branches, current_branch=branch_name)
         self.top_bar.set_selected_branch(branch_name)
+        self.left_sidebar.set_selected_branch(branch_name)
+        self.left_sidebar.set_footer_message(f"Branch selecionada: {branch_name}")
 
-        self.center_panel.set_commits([
-            f"Branch atual: {branch_name}",
-            f"Commit recente da branch {branch_name}",
-            "Atualização de interface",
-            "Refatoração da topbar",
-        ])
+        self.load_commits_for_branch(branch_name)
 
         self.right_panel.set_files([
             "ui/left_sidebar.py",
             "ui/main_window.py",
-            "ui/top_bar.py",
+            "services/git_service.py",
         ])
 
     def handle_top_branch_changed(self, branch_name: str):
+        self.perform_branch_checkout(branch_name)
+
+    def load_commits_for_branch(self, branch_name: str):
+        if not self.selected_repo_path:
+            self.center_panel.set_commits([
+                "Nenhum repositório selecionado."
+            ])
+            return
+
+        try:
+            commits = get_recent_commits(self.selected_repo_path, branch_name, limit=15)
+
+            if not commits:
+                self.center_panel.set_commits([
+                    f"Nenhum commit encontrado para a branch {branch_name}."
+                ])
+            else:
+                self.center_panel.set_commits(commits)
+
+        except GitServiceError as exc:
+            self.center_panel.set_commits([
+                "Erro ao carregar commits.",
+                str(exc)
+            ])
+
+    def sync_branch_ui(self, branch_name: str):
+        if not self.selected_repo_path:
+            return
+
+        branches = get_local_branches(self.selected_repo_path)
+
+        self.top_bar.set_branches(branches, current_branch=branch_name)
+        self.top_bar.set_selected_branch(branch_name)
+
+        self.left_sidebar.set_branches(branches)
         self.left_sidebar.set_selected_branch(branch_name)
-        self.set_status(f"Branch selecionada no topo: {branch_name}")
+        self.left_sidebar.set_footer_message(f"Branch atual: {branch_name}")
+        self.left_sidebar.set_viewing_count(len(branches))
 
-        self.center_panel.set_commits([
-            f"Branch atual: {branch_name}",
-            f"Commit recente da branch {branch_name}",
-            "Atualização pelo seletor do topo",
-            "Refatoração da interface",
-        ])
+        self.load_commits_for_branch(branch_name)
 
-        self.right_panel.set_files([
-            "ui/top_bar.py",
-            "ui/left_sidebar.py",
-            "ui/main_window.py",
-        ])
+    def perform_branch_checkout(self, branch_name: str):
+        if not self.selected_repo_path:
+            messagebox.showwarning(
+                "Repositório não selecionado",
+                "Selecione um repositório antes de trocar de branch."
+            )
+            return
+
+        try:
+            checkout_branch(self.selected_repo_path, branch_name)
+            current_branch = get_current_branch(self.selected_repo_path)
+
+            self.sync_branch_ui(current_branch)
+
+            self.right_panel.set_files([
+                "services/git_service.py",
+                "ui/main_window.py",
+                ".git/HEAD",
+            ])
+
+            self.set_status(f"Checkout realizado com sucesso para: {current_branch}")
+
+        except GitServiceError as exc:
+            messagebox.showerror("Erro no checkout", str(exc))
+            self.set_status(f"Falha ao trocar para a branch: {branch_name}")
