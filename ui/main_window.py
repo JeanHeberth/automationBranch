@@ -174,37 +174,6 @@ class MainWindow(ctk.CTk):
         except GitServiceError as exc:
             messagebox.showerror("Erro Git", str(exc))
 
-    def set_status(self, text: str):
-        self.status_label.configure(text=text)
-
-    def handle_top_action(self, action_name: str):
-        self.set_status(f"Ação executada: {action_name}")
-
-        if action_name == "Terminal":
-            messagebox.showinfo("Terminal", "Depois vamos conectar isso ao terminal real.")
-        elif action_name == "Pull":
-            messagebox.showinfo("Pull", "Depois vamos conectar ao git pull real.")
-        elif action_name == "Push":
-            messagebox.showinfo("Push", "Depois vamos conectar ao git push real.")
-        elif action_name == "Branch":
-            messagebox.showinfo("Branch", "Depois vamos conectar à criação de branch real.")
-        elif action_name == "Stash":
-            messagebox.showinfo("Stash", "Depois vamos conectar ao git stash real.")
-        elif action_name == "Pop":
-            messagebox.showinfo("Pop", "Depois vamos conectar ao git stash pop real.")
-        elif action_name == "Undo":
-            messagebox.showinfo("Undo", "Função de desfazer ainda será implementada.")
-        elif action_name == "Redo":
-            messagebox.showinfo("Redo", "Função de refazer ainda será implementada.")
-        elif action_name == "Actions":
-            messagebox.showinfo("Actions", "Menu de ações extras ainda será implementado.")
-        elif action_name == "Search":
-            messagebox.showinfo("Search", "Busca ainda será implementada.")
-        elif action_name == "Profile":
-            messagebox.showinfo("Profile", "Perfil ainda será implementado.")
-        elif action_name == "Refresh":
-            messagebox.showinfo("Refresh", "Atualização ainda será implementada.")
-
     def handle_branch_selected(self, branch_name: str):
         self.set_status(f"Branch selecionada: {branch_name}")
 
