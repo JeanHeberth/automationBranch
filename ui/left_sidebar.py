@@ -135,6 +135,8 @@ class LeftSidebar(ctk.CTkFrame):
         self.selected_branch = "main"
         self.branch_items: dict[str, SidebarItem] = {}
         self.all_branches: list[str] = []
+        self.remote_branches: list[str] = []
+        self.remotes: list[str] = []
 
         self.fonts = self._create_fonts()
 
@@ -142,7 +144,7 @@ class LeftSidebar(ctk.CTkFrame):
         self._build_scroll_area()
         self._build_footer()
 
-        self.set_branches(["main", "develop", "feature/ui-topbar"])
+        self.set_branches(["main", "develop", "feature/ui-topbar"], remote_branches=["origin/main"], remotes=["origin"])
 
     def _create_fonts(self):
         return {
@@ -251,13 +253,58 @@ class LeftSidebar(ctk.CTkFrame):
             height=1
         ).pack(fill="x", padx=0, pady=(0, 10))
 
+    def _render_local_section(self, branches: list[str]):
+        local = SidebarSection(self.scroll, "LOCAL", str(len(branches)), expanded=True, fonts=self.fonts)
+        local.pack(fill="x", padx=0, pady=(4, 10))
+
+        for branch in branches:
+            item = SidebarItem(
+                local.content,
+                branch,
+                icon="⑂",
+                level=0,
+                selected=(branch == self.selected_branch),
+                command=self._handle_branch_click,
+                fonts=self.fonts
+            )
+            item.pack(fill="x")
+            self.branch_items[branch] = item
+
+    def _render_remote_section(self, remote_branches: list[str], remotes: list[str]):
+        remote = SidebarSection(self.scroll, "REMOTE", str(len(remotes)), expanded=True, fonts=self.fonts)
+        remote.pack(fill="x", padx=0, pady=(0, 10))
+
+        if not remotes:
+            return
+
+        for remote_name in remotes:
+            SidebarItem(
+                remote.content,
+                remote_name,
+                icon="☁",
+                level=0,
+                fonts=self.fonts
+            ).pack(fill="x")
+
+            related = []
+            prefix = f"{remote_name}/"
+            for branch in remote_branches:
+                if branch.startswith(prefix):
+                    related.append(branch[len(prefix):])
+
+            for branch_name in related:
+                SidebarItem(
+                    remote.content,
+                    branch_name,
+                    icon="⑂",
+                    level=1,
+                    fonts=self.fonts
+                ).pack(fill="x")
+
     def _build_static_sections(self):
         self._section_divider()
 
-        remote = SidebarSection(self.scroll, "REMOTE", "1", expanded=True, fonts=self.fonts)
-        remote.pack(fill="x", padx=0, pady=(0, 10))
-        SidebarItem(remote.content, "origin", icon="☁", level=0, fonts=self.fonts).pack(fill="x")
-        SidebarItem(remote.content, "main", icon="⑂", level=1, fonts=self.fonts).pack(fill="x")
+        self._render_remote_section(self.remote_branches, self.remotes)
 
         self._section_divider()
 
@@ -281,23 +328,7 @@ class LeftSidebar(ctk.CTkFrame):
 
     def _render_branches(self, branches: list[str]):
         self._clear_sections()
-
-        local = SidebarSection(self.scroll, "LOCAL", str(len(branches)), expanded=True, fonts=self.fonts)
-        local.pack(fill="x", padx=0, pady=(4, 10))
-
-        for branch in branches:
-            item = SidebarItem(
-                local.content,
-                branch,
-                icon="⑂",
-                level=0,
-                selected=(branch == self.selected_branch),
-                command=self._handle_branch_click,
-                fonts=self.fonts
-            )
-            item.pack(fill="x")
-            self.branch_items[branch] = item
-
+        self._render_local_section(branches)
         self._build_static_sections()
         self.set_viewing_count(len(branches))
 
@@ -322,8 +353,10 @@ class LeftSidebar(ctk.CTkFrame):
 
         self._render_branches(filtered)
 
-    def set_branches(self, branches: list[str]):
+    def set_branches(self, branches: list[str], remote_branches: list[str] | None = None, remotes: list[str] | None = None):
         self.all_branches = branches[:]
+        self.remote_branches = remote_branches[:] if remote_branches else []
+        self.remotes = remotes[:] if remotes else []
 
         if self.selected_branch not in self.all_branches and self.all_branches:
             self.selected_branch = self.all_branches[0]
