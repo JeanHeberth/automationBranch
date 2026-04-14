@@ -19,7 +19,7 @@ from services.branch_service import (
     create_branch,
 )
 from services.commit_service import (
-    get_recent_commits,
+    get_recent_commit_rows,
     get_changed_files_grouped,
     stage_all_changes,
     commit_all_changes,
@@ -114,9 +114,7 @@ class MainWindow(ctk.CTk):
         self.top_bar.set_branches([], current_branch="")
         self.left_sidebar.set_branches([], remote_branches=[], remotes=[])
         self.center_panel.set_current_branch("")
-        self.center_panel.set_commits([
-            "Nenhum repositório selecionado."
-        ])
+        self.center_panel.set_commit_rows([])
         self.right_panel.set_files_grouped([], [])
 
     def set_status(self, text: str):
@@ -125,21 +123,17 @@ class MainWindow(ctk.CTk):
     def load_commits_for_branch(self, branch_name: str):
         if not self.selected_repo_path:
             self.center_panel.set_current_branch("")
-            self.center_panel.set_commits([
-                "Nenhum repositório selecionado."
-            ])
+            self.center_panel.set_commit_rows([])
             return
 
         try:
-            commits = get_recent_commits(self.selected_repo_path, branch_name, limit=20)
+            rows = get_recent_commit_rows(self.selected_repo_path, branch_name, limit=25)
             self.center_panel.set_current_branch(branch_name)
 
-            if not commits:
-                self.center_panel.set_commits([
-                    f"Nenhum commit encontrado para a branch {branch_name}."
-                ])
+            if not rows:
+                self.center_panel.set_commit_rows([])
             else:
-                self.center_panel.set_commits(commits)
+                self.center_panel.set_commit_rows(rows)
 
         except GitServiceError as exc:
             self.center_panel.set_current_branch(branch_name)

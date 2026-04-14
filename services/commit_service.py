@@ -1,28 +1,62 @@
-from typing import List, Dict
+import re
+from typing import List, Dict, Any
 
 from services.git_runner import run_git_command, GitServiceError
 
 
-def get_recent_commits(repo_path: str, branch_name: str, limit: int = 15) -> List[str]:
-    format_string = "%h|%s|%an"
+def get_recent_commit_rows(repo_path: str, branch_name: str, limit: int = 25) -> List[Dict[str, Any]]:
     output = run_git_command(
         repo_path,
-        ["log", branch_name, f"-n{limit}", f"--pretty=format:{format_string}"]
+        [
+            "log",
+            branch_name,
+            "--graph",
+            "--decorate=short",
+            f"-n{limit}",
+            "--pretty=format:%h%x01%s%x01%an%x01%P%x01%d",
+        ],
     )
 
     if not output:
         return []
 
-    commits = []
-    for line in output.splitlines():
-        parts = line.split("|", 2)
-        if len(parts) == 3:
-            commit_hash, subject, author = parts
-            commits.append(f"{commit_hash.strip()} | {subject.strip()} | {author.strip()}")
-        else:
-            commits.append(line.strip())
+    rows: List[Dict[str, Any]] = []
 
-    return commits
+    for raw_line in output.splitlines():
+        if "\x01" not in raw_line:
+            continue
+
+        before, rest = raw_line.split("\x01", 1)
+        before = before.rstrip()
+
+        match = re.match(r"^(.*?)([0-9a-fA-F]+)$", before)
+        if not match:
+            continue
+
+        graph_prefix = match.group(1)
+        commit_hash = match.group(2)
+
+        parts = rest.split("\x01")
+        subject = parts[0].strip() if len(parts) > 0 else ""
+        author = parts[1].strip() if len(parts) > 1 else ""
+        parents_field = parts[2].strip() if len(parts) > 2 else ""
+        decorations = parts[3].strip() if len(parts) > 3 else ""
+
+        parents = [p for p in parents_field.split() if p]
+
+        rows.append(
+            {
+                "graph": graph_prefix,
+                "hash": commit_hash,
+                "subject": subject,
+                "author": author,
+                "parents": parents,
+                "decorations": decorations,
+                "is_merge": len(parents) > 1,
+            }
+        )
+
+    return rows
 
 
 def get_changed_files(repo_path: str) -> List[str]:
