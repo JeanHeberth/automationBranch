@@ -3,14 +3,30 @@ import customtkinter as ctk
 import os
 
 APP_COLORS = {
-    "bg": "#1d2128",
-    "topbar": "#2b2f38",
-    "sidebar": "#21252d",
-    "panel": "#21252d",
-    "text": "#e8ecf1",
-    "muted": "#9aa3b2",
-    "accent": "#3b82f6",
-    "border": "#3a4050",
+    # Backgrounds
+    "bg": "#0F172A",
+    "background": "#0F172A",
+    "panel": "#111827",
+    "topbar": "#1F2937",
+    "sidebar": "#111827",
+
+    # Texto
+    "text": "#E5E7EB",
+    "muted": "#9CA3AF",
+
+    # Azul principal
+    "primary": "#2563EB",
+    "primary_hover": "#3B82F6",
+    "accent": "#1EC8FF",
+
+    # Estados
+    "success": "#22C55E",
+    "warning": "#F59E0B",
+    "danger": "#EF4444",
+
+    # Neutros
+    "border": "#374151",
+    "hover": "#374151",
 }
 
 ICON_PATH = "assets/icons"
