@@ -40,6 +40,13 @@ def get_remotes(repo_path: str) -> List[str]:
     return [line.strip() for line in output.splitlines() if line.strip()]
 
 
+def get_origin_remote_url(repo_path: str) -> str:
+    try:
+        return run_git_command(repo_path, ["remote", "get-url", "origin"]).strip()
+    except GitServiceError:
+        return ""
+
+
 def get_current_branch(repo_path: str) -> str:
     output = run_git_command(repo_path, ["branch", "--show-current"])
     return output.strip()
@@ -50,6 +57,18 @@ def checkout_branch(repo_path: str, branch_name: str) -> str:
 
 
 def create_branch(repo_path: str, branch_name: str) -> str:
+    branch_name = branch_name.strip()
+
+    if not branch_name:
+        raise ValueError("Nome da branch não pode ser vazio.")
+
+    branch_name = branch_name.lower().replace(" ", "-")
+
+    valid_prefixes = ("feature/", "bugfix/", "hotfix/", "release/")
+
+    if not branch_name.startswith(valid_prefixes):
+        branch_name = f"feature/{branch_name}"
+
     return run_git_command(repo_path, ["checkout", "-b", branch_name])
 
 

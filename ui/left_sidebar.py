@@ -9,7 +9,7 @@ class SidebarSection(ctk.CTkFrame):
         self.expanded = expanded
         self.fonts = fonts or {}
 
-        self.header = ctk.CTkFrame(self, fg_color="transparent", height=40)
+        self.header = ctk.CTkFrame(self, fg_color="transparent", height=34)
         self.header.pack(fill="x", padx=0, pady=(0, 4))
 
         self.arrow_label = ctk.CTkLabel(
@@ -137,6 +137,7 @@ class LeftSidebar(ctk.CTkFrame):
         self.all_branches: list[str] = []
         self.remote_branches: list[str] = []
         self.remotes: list[str] = []
+        self.pull_requests: list[dict] = []
 
         self.fonts = self._create_fonts()
 
@@ -154,6 +155,7 @@ class LeftSidebar(ctk.CTkFrame):
             "item_selected": ctk.CTkFont(family="Helvetica Neue", size=13, weight="bold"),
             "footer": ctk.CTkFont(family="Helvetica Neue", size=12),
             "search": ctk.CTkFont(family="Helvetica Neue", size=13),
+            "pr": ctk.CTkFont(family="Helvetica Neue", size=12),
         }
 
     def _build_header(self):
@@ -325,6 +327,51 @@ class LeftSidebar(ctk.CTkFrame):
                     fonts=self.fonts
                 ).pack(fill="x")
 
+    def _render_pull_requests_section(self):
+        prs = SidebarSection(
+            self.scroll,
+            "PULL REQUESTS",
+            str(len(self.pull_requests)),
+            expanded=True if self.pull_requests else False,
+            fonts=self.fonts
+        )
+        prs.pack(fill="x", padx=0, pady=(0, 6))
+
+        if not self.pull_requests:
+            ctk.CTkLabel(
+                prs.content,
+                text="Nenhum PR aberto",
+                text_color=APP_COLORS["muted"],
+                font=self.fonts["pr"]
+            ).pack(anchor="w", padx=16, pady=(2, 8))
+            return
+
+        for pr in self.pull_requests:
+            title = f"#{pr.get('number')} {pr.get('title', '')}"
+            head = pr.get("head", "")
+            base = pr.get("base", "")
+
+            item = ctk.CTkFrame(prs.content, fg_color="#2a2f3a", corner_radius=8)
+            item.pack(fill="x", padx=8, pady=4)
+
+            ctk.CTkLabel(
+                item,
+                text=title,
+                text_color=APP_COLORS["text"],
+                font=self.fonts["pr"],
+                anchor="w",
+                justify="left",
+                wraplength=220
+            ).pack(fill="x", padx=10, pady=(8, 2))
+
+            ctk.CTkLabel(
+                item,
+                text=f"{head} → {base}",
+                text_color=APP_COLORS["muted"],
+                font=ctk.CTkFont(size=11),
+                anchor="w"
+            ).pack(fill="x", padx=10, pady=(0, 8))
+
     def _build_static_sections(self):
         self._section_divider()
         self._render_remote_section(self.remote_branches, self.remotes)
@@ -334,8 +381,7 @@ class LeftSidebar(ctk.CTkFrame):
         cloud.pack(fill="x", padx=0, pady=(0, 10))
 
         self._section_divider()
-        prs = SidebarSection(self.scroll, "PULL REQUESTS", "0", expanded=False, fonts=self.fonts)
-        prs.pack(fill="x", padx=0, pady=(0, 6))
+        self._render_pull_requests_section()
 
         self._section_divider()
         issues = SidebarSection(self.scroll, "ISSUES", "", expanded=False, fonts=self.fonts)
@@ -380,6 +426,10 @@ class LeftSidebar(ctk.CTkFrame):
         if self.selected_branch not in self.all_branches:
             self.selected_branch = self.all_branches[0] if self.all_branches else ""
 
+        self._render_branches(self.all_branches)
+
+    def set_pull_requests(self, pull_requests: list[dict]):
+        self.pull_requests = pull_requests[:] if pull_requests else []
         self._render_branches(self.all_branches)
 
     def set_selected_branch(self, branch_name: str):

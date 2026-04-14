@@ -24,6 +24,7 @@ from services.commit_service import (
     stage_all_changes,
     commit_all_changes,
 )
+from services.pull_request_service import list_open_pull_requests
 from services.sync_service import (
     git_pull,
     git_push,
@@ -113,6 +114,7 @@ class MainWindow(ctk.CTk):
     def _load_initial_data(self):
         self.top_bar.set_branches([], current_branch="")
         self.left_sidebar.set_branches([], remote_branches=[], remotes=[])
+        self.left_sidebar.set_pull_requests([])
         self.center_panel.set_current_branch("")
         self.center_panel.set_commit_rows([])
         self.right_panel.set_files_grouped([], [])
@@ -160,6 +162,14 @@ class MainWindow(ctk.CTk):
                 []
             )
 
+    def load_pull_requests(self):
+        if not self.selected_repo_path:
+            self.left_sidebar.set_pull_requests([])
+            return
+
+        prs = list_open_pull_requests(self.selected_repo_path)
+        self.left_sidebar.set_pull_requests(prs)
+
     def sync_branch_ui(self, branch_name: str):
         if not self.selected_repo_path:
             return
@@ -186,6 +196,7 @@ class MainWindow(ctk.CTk):
 
         self.load_commits_for_branch(branch_name)
         self.load_changed_files()
+        self.load_pull_requests()
 
     def perform_branch_checkout(self, branch_name: str):
         if not self.selected_repo_path:
