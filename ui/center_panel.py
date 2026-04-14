@@ -14,6 +14,56 @@ GRAPH_COLORS = [
 ]
 
 
+class HoverTooltip:
+    def __init__(self, widget, text_getter):
+        self.widget = widget
+        self.text_getter = text_getter
+        self.tip = None
+
+        widget.bind("<Enter>", self.show)
+        widget.bind("<Leave>", self.hide)
+        widget.bind("<Motion>", self.move)
+
+    def show(self, event=None):
+        text = self.text_getter()
+        if not text:
+            return
+
+        if self.tip is not None:
+            return
+
+        self.tip = ctk.CTkToplevel(self.widget)
+        self.tip.wm_overrideredirect(True)
+        self.tip.attributes("-topmost", True)
+
+        label = ctk.CTkLabel(
+            self.tip,
+            text=text,
+            text_color=APP_COLORS["text"],
+            fg_color="#111827",
+            corner_radius=8,
+            padx=10,
+            pady=6,
+            justify="left"
+        )
+        label.pack()
+
+        self.move(event)
+
+    def move(self, event=None):
+        if self.tip is None or event is None:
+            return
+
+        x = event.x_root + 12
+        y = event.y_root + 12
+        self.tip.geometry(f"+{x}+{y}")
+
+    def hide(self, _event=None):
+        if self.tip is not None:
+            self.tip.destroy()
+            self.tip = None
+
+
 class CommitRow(ctk.CTkFrame):
     ROW_HEIGHT = 34
     GRAPH_WIDTH = 150
@@ -83,6 +133,8 @@ class CommitRow(ctk.CTkFrame):
             )
             extra_label.pack(padx=8, pady=3)
 
+        HoverTooltip(badge, self._build_tooltip_text)
+
     def _build_graph(self):
         graph_frame = ctk.CTkFrame(self, fg_color="transparent", height=self.ROW_HEIGHT)
         graph_frame.grid(row=0, column=1, sticky="nsew", padx=0, pady=0)
@@ -99,6 +151,7 @@ class CommitRow(ctk.CTkFrame):
         self.canvas.pack(fill="both", expand=True)
 
         self._draw_graph(self.commit_data.get("graph", ""))
+        HoverTooltip(self.canvas, self._build_tooltip_text)
 
     def _build_commit_message(self):
         message_frame = ctk.CTkFrame(
@@ -125,6 +178,31 @@ class CommitRow(ctk.CTkFrame):
             font=ctk.CTkFont(size=13)
         )
         label.pack(fill="both", expand=True, padx=10)
+
+    def _build_tooltip_text(self):
+        decorations = self.commit_data.get("decorations", "").strip()
+        commit_hash = self.commit_data.get("hash", "")
+        subject = self.commit_data.get("subject", "")
+        author = self.commit_data.get("author", "")
+        is_merge = self.commit_data.get("is_merge", False)
+
+        lines = []
+
+        if decorations:
+            clean = decorations.strip()
+            if clean.startswith("(") and clean.endswith(")"):
+                clean = clean[1:-1]
+            clean = clean.replace("HEAD -> ", "")
+            lines.append(f"Refs: {clean}")
+
+        lines.append(f"Commit: {commit_hash}")
+        lines.append(f"Autor: {author}")
+        lines.append(f"Mensagem: {subject}")
+
+        if is_merge:
+            lines.append("Tipo: Merge commit")
+
+        return "\n".join(lines)
 
     def _draw_graph(self, graph_prefix: str):
         canvas = self.canvas
