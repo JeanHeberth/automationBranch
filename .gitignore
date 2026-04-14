@@ -1,0 +1,69 @@
+# ========================
+# Python
+# ========================
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual Environment
+.venv/
+venv/
+env/
+
+# ========================
+# IDEs
+# ========================
+# PyCharm / IntelliJ
+.idea/
+*.iml
+
+# VS Code
+.vscode/
+
+# ========================
+# Sistema Operacional
+# ========================
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+
+# ========================
+# Logs
+# ========================
+*.log
+
+# ========================
+# Env Variables
+# ========================
+.env
+
+# ========================
+# Build / Dist
+# ========================
+build/
+dist/
+*.egg-info/
+
+# ========================
+# Test / Coverage
+# ========================
+.coverage
+htmlcov/
+.pytest_cache/
+
+# ========================
+# Misc
+# ========================
+*.sqlite3
+
+# ========================
+# Assets temporários
+# ========================
+assets/tmp/
+
+# ========================
+# Node (caso use frontend depois)
+# ========================
+node_modules/
