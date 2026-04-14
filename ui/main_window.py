@@ -18,7 +18,12 @@ from services.branch_service import (
     checkout_branch,
     create_branch,
 )
-from services.commit_service import get_recent_commits
+from services.commit_service import (
+    get_recent_commits,
+    get_changed_files_grouped,
+    stage_all_changes,
+    commit_all_changes,
+)
 from services.sync_service import (
     git_pull,
     git_push,
@@ -62,6 +67,7 @@ class MainWindow(ctk.CTk):
 
         self.right_panel = RightPanel(self)
         self.right_panel.grid(row=1, column=2, sticky="nsew")
+        self.right_panel.set_on_commit(self.handle_commit)
 
         self.status_label = ctk.CTkLabel(
             self,
@@ -110,25 +116,26 @@ class MainWindow(ctk.CTk):
             remote_branches=["origin/main"],
             remotes=["origin"]
         )
+        self.center_panel.set_current_branch("main")
         self.center_panel.set_commits([
             "Selecione um repositório Git para carregar os dados reais."
         ])
-        self.right_panel.set_files([
-            "Nenhum arquivo carregado."
-        ])
+        self.right_panel.set_files_grouped([], [])
 
     def set_status(self, text: str):
         self.status_label.configure(text=text)
 
     def load_commits_for_branch(self, branch_name: str):
         if not self.selected_repo_path:
+            self.center_panel.set_current_branch(branch_name)
             self.center_panel.set_commits([
                 "Nenhum repositório selecionado."
             ])
             return
 
         try:
-            commits = get_recent_commits(self.selected_repo_path, branch_name, limit=15)
+            commits = get_recent_commits(self.selected_repo_path, branch_name, limit=20)
+            self.center_panel.set_current_branch(branch_name)
 
             if not commits:
                 self.center_panel.set_commits([
@@ -138,10 +145,29 @@ class MainWindow(ctk.CTk):
                 self.center_panel.set_commits(commits)
 
         except GitServiceError as exc:
+            self.center_panel.set_current_branch(branch_name)
             self.center_panel.set_commits([
                 "Erro ao carregar commits.",
                 str(exc)
             ])
+
+    def load_changed_files(self):
+        if not self.selected_repo_path:
+            self.right_panel.set_files_grouped([], [])
+            return
+
+        try:
+            grouped = get_changed_files_grouped(self.selected_repo_path)
+            self.right_panel.set_files_grouped(
+                grouped.get("staged", []),
+                grouped.get("unstaged", [])
+            )
+
+        except GitServiceError as exc:
+            self.right_panel.set_files_grouped(
+                [f"Erro: {str(exc)}"],
+                []
+            )
 
     def sync_branch_ui(self, branch_name: str):
         if not self.selected_repo_path:
@@ -168,6 +194,7 @@ class MainWindow(ctk.CTk):
             self.is_updating_branch_ui = False
 
         self.load_commits_for_branch(branch_name)
+        self.load_changed_files()
 
     def perform_branch_checkout(self, branch_name: str):
         if not self.selected_repo_path:
@@ -182,18 +209,43 @@ class MainWindow(ctk.CTk):
             current_branch = get_current_branch(self.selected_repo_path)
 
             self.sync_branch_ui(current_branch)
-
-            self.right_panel.set_files([
-                "services/branch_service.py",
-                "ui/main_window.py",
-                ".git/HEAD",
-            ])
-
             self.set_status(f"Checkout realizado com sucesso para: {current_branch}")
 
         except GitServiceError as exc:
             messagebox.showerror("Erro no checkout", str(exc))
             self.set_status(f"Falha ao trocar para a branch: {branch_name}")
+
+    def handle_commit(self):
+        if not self.selected_repo_path:
+            messagebox.showwarning(
+                "Repositório não selecionado",
+                "Selecione um repositório antes de fazer commit."
+            )
+            return
+
+        commit_message = self.right_panel.get_commit_message()
+
+        if not commit_message:
+            messagebox.showwarning(
+                "Mensagem obrigatória",
+                "Digite a mensagem do commit antes de continuar."
+            )
+            return
+
+        try:
+            stage_all_changes(self.selected_repo_path)
+            result = commit_all_changes(self.selected_repo_path, commit_message)
+
+            current_branch = get_current_branch(self.selected_repo_path)
+            self.sync_branch_ui(current_branch)
+            self.right_panel.clear_commit_message()
+
+            self.set_status("Commit realizado com sucesso.")
+            messagebox.showinfo("Commit", result or "Commit realizado com sucesso.")
+
+        except GitServiceError as exc:
+            messagebox.showerror("Erro no commit", str(exc))
+            self.set_status("Falha ao executar commit.")
 
     def handle_top_action(self, action_name: str):
         self.set_status(f"Ação executada: {action_name}")
@@ -231,21 +283,18 @@ class MainWindow(ctk.CTk):
                 current_branch = get_current_branch(self.selected_repo_path)
                 self.sync_branch_ui(current_branch)
 
-                self.right_panel.set_files([
-                    "services/branch_service.py",
-                    ".git/HEAD",
-                ])
-
                 self.set_status(f"Branch criada com sucesso: {current_branch}")
                 messagebox.showinfo("Nova branch", result or f"Branch '{current_branch}' criada com sucesso.")
 
             elif action_name == "Stash":
                 result = git_stash(self.selected_repo_path)
+                self.sync_branch_ui(get_current_branch(self.selected_repo_path))
                 self.set_status("Stash executado com sucesso.")
                 messagebox.showinfo("Stash", result or "Stash executado com sucesso.")
 
             elif action_name == "Pop":
                 result = git_stash_pop(self.selected_repo_path)
+                self.sync_branch_ui(get_current_branch(self.selected_repo_path))
                 self.set_status("Stash pop executado com sucesso.")
                 messagebox.showinfo("Pop", result or "Stash pop executado com sucesso.")
 
@@ -294,12 +343,6 @@ class MainWindow(ctk.CTk):
             current_branch = get_current_branch(folder)
 
             self.sync_branch_ui(current_branch)
-
-            self.right_panel.set_files([
-                ".git/config",
-                ".git/HEAD",
-            ])
-
             self.set_status(f"Repositório selecionado: {repo_name} ({folder})")
 
         except GitServiceError as exc:
