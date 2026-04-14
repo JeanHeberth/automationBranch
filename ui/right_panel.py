@@ -2,6 +2,56 @@ import customtkinter as ctk
 from ui.theme import APP_COLORS
 
 
+class FileSection(ctk.CTkFrame):
+    def __init__(self, master, title: str):
+        super().__init__(master, fg_color="transparent")
+
+        self.title_label = ctk.CTkLabel(
+            self,
+            text=title,
+            text_color=APP_COLORS["muted"],
+            font=ctk.CTkFont(size=13, weight="bold")
+        )
+        self.title_label.pack(anchor="w", padx=6, pady=(4, 6))
+
+        self.container = ctk.CTkFrame(self, fg_color="transparent")
+        self.container.pack(fill="x", expand=False)
+
+    def clear(self):
+        for widget in self.container.winfo_children():
+            widget.destroy()
+
+    def set_files(self, files: list[str]):
+        self.clear()
+
+        if not files:
+            empty = ctk.CTkLabel(
+                self.container,
+                text="Nenhum arquivo",
+                text_color=APP_COLORS["muted"],
+                anchor="w"
+            )
+            empty.pack(fill="x", padx=8, pady=(0, 8))
+            return
+
+        for file_text in files:
+            item = ctk.CTkFrame(
+                self.container,
+                fg_color="#2a2f3a",
+                corner_radius=8,
+                height=36
+            )
+            item.pack(fill="x", padx=6, pady=3)
+
+            label = ctk.CTkLabel(
+                item,
+                text=file_text,
+                text_color=APP_COLORS["text"],
+                anchor="w"
+            )
+            label.pack(fill="x", padx=10, pady=7)
+
+
 class RightPanel(ctk.CTkFrame):
     def __init__(self, master):
         super().__init__(
@@ -9,6 +59,9 @@ class RightPanel(ctk.CTkFrame):
             fg_color=APP_COLORS["panel"],
             corner_radius=0
         )
+
+        self.commit_placeholder = "Digite a mensagem do commit..."
+        self.is_placeholder_active = True
 
         self._build_header()
         self._build_file_list()
@@ -30,20 +83,18 @@ class RightPanel(ctk.CTkFrame):
         self.files_container = ctk.CTkFrame(self, fg_color="transparent")
         self.files_container.pack(fill="both", expand=True, padx=6, pady=(0, 6))
 
-        self.files_title = ctk.CTkLabel(
-            self.files_container,
-            text="Arquivos",
-            text_color=APP_COLORS["muted"],
-            font=ctk.CTkFont(size=13, weight="bold")
-        )
-        self.files_title.pack(anchor="w", padx=6, pady=(4, 6))
-
         self.scroll = ctk.CTkScrollableFrame(
             self.files_container,
             fg_color="transparent",
-            height=260
+            height=280
         )
         self.scroll.pack(fill="both", expand=True)
+
+        self.staged_section = FileSection(self.scroll, "Staged Files")
+        self.staged_section.pack(fill="x", pady=(0, 10))
+
+        self.unstaged_section = FileSection(self.scroll, "Unstaged Files")
+        self.unstaged_section.pack(fill="x", pady=(0, 10))
 
     def _build_commit_area(self):
         divider = ctk.CTkFrame(self, fg_color=APP_COLORS["border"], height=1)
@@ -65,12 +116,15 @@ class RightPanel(ctk.CTkFrame):
             height=110,
             corner_radius=8,
             fg_color="#2a2f3a",
-            text_color=APP_COLORS["text"],
+            text_color=APP_COLORS["muted"],
             border_width=1,
             border_color=APP_COLORS["border"]
         )
         self.commit_msg.pack(fill="x", pady=(0, 10))
-        self.commit_msg.insert("1.0", "Digite a mensagem do commit...")
+        self.commit_msg.insert("1.0", self.commit_placeholder)
+
+        self.commit_msg.bind("<FocusIn>", self._handle_commit_focus_in)
+        self.commit_msg.bind("<FocusOut>", self._handle_commit_focus_out)
 
         self.commit_btn = ctk.CTkButton(
             commit_container,
@@ -83,50 +137,45 @@ class RightPanel(ctk.CTkFrame):
         )
         self.commit_btn.pack(fill="x")
 
-    def clear(self):
-        for widget in self.scroll.winfo_children():
-            widget.destroy()
+    def _handle_commit_focus_in(self, _event=None):
+        if self.is_placeholder_active:
+            self.commit_msg.delete("1.0", "end")
+            self.commit_msg.configure(text_color=APP_COLORS["text"])
+            self.is_placeholder_active = False
+
+    def _handle_commit_focus_out(self, _event=None):
+        content = self.commit_msg.get("1.0", "end").strip()
+
+        if not content:
+            self._restore_placeholder()
+
+    def _restore_placeholder(self):
+        self.commit_msg.delete("1.0", "end")
+        self.commit_msg.insert("1.0", self.commit_placeholder)
+        self.commit_msg.configure(text_color=APP_COLORS["muted"])
+        self.is_placeholder_active = True
+
+    def set_files_grouped(self, staged_files: list[str], unstaged_files: list[str]):
+        self.staged_section.set_files(staged_files)
+        self.unstaged_section.set_files(unstaged_files)
 
     def set_files(self, files: list[str]):
-        self.clear()
-
-        if not files:
-            self._empty_state("Nenhum arquivo encontrado.")
-            return
-
-        for file in files:
-            self._create_file_item(file)
-
-    def _create_file_item(self, text: str):
-        item = ctk.CTkFrame(
-            self.scroll,
-            fg_color="#2a2f3a",
-            corner_radius=8,
-            height=40
-        )
-        item.pack(fill="x", padx=6, pady=3)
-
-        label = ctk.CTkLabel(
-            item,
-            text=text,
-            text_color=APP_COLORS["text"],
-            anchor="w"
-        )
-        label.pack(fill="x", padx=10, pady=8)
-
-    def _empty_state(self, text: str):
-        ctk.CTkLabel(
-            self.scroll,
-            text=text,
-            text_color=APP_COLORS["muted"]
-        ).pack(pady=20)
+        self.staged_section.set_files(files)
+        self.unstaged_section.set_files([])
 
     def get_commit_message(self) -> str:
+        if self.is_placeholder_active:
+            return ""
         return self.commit_msg.get("1.0", "end").strip()
 
     def clear_commit_message(self):
-        self.commit_msg.delete("1.0", "end")
+        self._restore_placeholder()
 
     def set_commit_message(self, text: str):
         self.commit_msg.delete("1.0", "end")
         self.commit_msg.insert("1.0", text)
+        self.commit_msg.configure(text_color=APP_COLORS["text"])
+        self.is_placeholder_active = False
+
+    def set_on_commit(self, callback):
+        self.commit_btn.configure(command=callback)
