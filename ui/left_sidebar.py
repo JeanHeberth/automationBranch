@@ -121,7 +121,7 @@ class SidebarItem(ctk.CTkFrame):
 
 
 class LeftSidebar(ctk.CTkFrame):
-    def __init__(self, master, on_branch_select=None):
+    def __init__(self, master, on_branch_select=None, on_open_pr=None, on_merge_pr=None):
         super().__init__(
             master,
             fg_color=APP_COLORS["sidebar"],
@@ -132,6 +132,9 @@ class LeftSidebar(ctk.CTkFrame):
         self.pack_propagate(False)
 
         self.on_branch_select = on_branch_select
+        self.on_open_pr = on_open_pr
+        self.on_merge_pr = on_merge_pr
+
         self.selected_branch = ""
         self.branch_items: dict[str, SidebarItem] = {}
         self.all_branches: list[str] = []
@@ -370,7 +373,46 @@ class LeftSidebar(ctk.CTkFrame):
                 text_color=APP_COLORS["muted"],
                 font=ctk.CTkFont(size=11),
                 anchor="w"
-            ).pack(fill="x", padx=10, pady=(0, 8))
+            ).pack(fill="x", padx=10, pady=(0, 6))
+
+            actions_row = ctk.CTkFrame(item, fg_color="transparent")
+            actions_row.pack(fill="x", padx=8, pady=(0, 8))
+
+            open_btn = ctk.CTkButton(
+                actions_row,
+                text="Abrir",
+                width=70,
+                height=28,
+                fg_color="#2563EB",
+                hover_color="#3B82F6",
+                text_color="#FFFFFF",
+                corner_radius=8,
+                font=ctk.CTkFont(size=11, weight="bold"),
+                command=lambda p=pr: self._handle_open_pr_click(p)
+            )
+            open_btn.pack(side="left", padx=(0, 6))
+
+            merge_btn = ctk.CTkButton(
+                actions_row,
+                text="Merge",
+                width=70,
+                height=28,
+                fg_color="#374151",
+                hover_color="#4B5563",
+                text_color=APP_COLORS["text"],
+                corner_radius=8,
+                font=ctk.CTkFont(size=11, weight="bold"),
+                command=lambda p=pr: self._handle_merge_pr_click(p)
+            )
+            merge_btn.pack(side="left")
+
+    def _handle_open_pr_click(self, pr: dict):
+        if self.on_open_pr:
+            self.on_open_pr(pr)
+
+    def _handle_merge_pr_click(self, pr: dict):
+        if self.on_merge_pr:
+            self.on_merge_pr(pr)
 
     def _build_static_sections(self):
         self._section_divider()

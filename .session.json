@@ -1,0 +1,6 @@
+{
+  "is_authenticated": true,
+  "provider": "GitHub",
+  "display_name": "GitHub User",
+  "email": "github-user@example.com"
+}
