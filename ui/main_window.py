@@ -35,6 +35,7 @@ class MainWindow(ctk.CTk):
 
         self.left_sidebar = LeftSidebar(self)
         self.left_sidebar.grid(row=1, column=0, sticky="nsew")
+        self.left_sidebar.grid_propagate(False)
 
         self.center_panel = CenterPanel(self)
         self.center_panel.grid(row=1, column=1, sticky="nsew")
@@ -75,13 +76,13 @@ class MainWindow(ctk.CTk):
         self.minsize(min_width, min_height)
 
     def _configure_grid(self):
-        self.grid_rowconfigure(0, weight=0)   # topbar
-        self.grid_rowconfigure(1, weight=1)   # conteúdo principal
-        self.grid_rowconfigure(2, weight=0)   # status bar
+        self.grid_rowconfigure(0, weight=0)
+        self.grid_rowconfigure(1, weight=1)
+        self.grid_rowconfigure(2, weight=0)
 
-        self.grid_columnconfigure(0, weight=0, minsize=250)  # sidebar esquerda
-        self.grid_columnconfigure(1, weight=1)               # centro
-        self.grid_columnconfigure(2, weight=0, minsize=320)  # painel direito
+        self.grid_columnconfigure(0, weight=0, minsize=280)
+        self.grid_columnconfigure(1, weight=1)
+        self.grid_columnconfigure(2, weight=0, minsize=340)
 
     def _load_initial_data(self):
         self.left_sidebar.set_branches(["main", "develop", "feature/ui-topbar"])
