@@ -12,6 +12,8 @@ from services.git_runner import GitServiceError
 from services.branch_service import (
     is_git_repository,
     get_local_branches,
+    get_remote_branches,
+    get_remotes,
     get_current_branch,
     checkout_branch,
     create_branch,
@@ -103,7 +105,11 @@ class MainWindow(ctk.CTk):
         self.grid_columnconfigure(2, weight=0, minsize=340)
 
     def _load_initial_data(self):
-        self.left_sidebar.set_branches(["main", "develop", "feature/ui-topbar"])
+        self.left_sidebar.set_branches(
+            ["main", "develop", "feature/ui-topbar"],
+            remote_branches=["origin/main"],
+            remotes=["origin"]
+        )
         self.center_panel.set_commits([
             "Selecione um repositório Git para carregar os dados reais."
         ])
@@ -142,13 +148,19 @@ class MainWindow(ctk.CTk):
             return
 
         branches = get_local_branches(self.selected_repo_path)
+        remote_branches = get_remote_branches(self.selected_repo_path)
+        remotes = get_remotes(self.selected_repo_path)
 
         self.is_updating_branch_ui = True
         try:
             self.top_bar.set_branches(branches, current_branch=branch_name)
             self.top_bar.set_selected_branch(branch_name)
 
-            self.left_sidebar.set_branches(branches)
+            self.left_sidebar.set_branches(
+                branches,
+                remote_branches=remote_branches,
+                remotes=remotes
+            )
             self.left_sidebar.set_selected_branch(branch_name)
             self.left_sidebar.set_footer_message(f"Branch atual: {branch_name}")
             self.left_sidebar.set_viewing_count(len(branches))
