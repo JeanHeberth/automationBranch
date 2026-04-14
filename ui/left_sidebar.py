@@ -3,20 +3,18 @@ from ui.theme import APP_COLORS
 
 
 class SidebarSection(ctk.CTkFrame):
-    def __init__(self, master, title: str, count: str = "", expanded: bool = True):
+    def __init__(self, master, title: str, count: str = "", expanded: bool = True, fonts: dict | None = None):
         super().__init__(master, fg_color="transparent")
 
-        self.title = title
-        self.count = count
         self.expanded = expanded
+        self.fonts = fonts or {}
 
         self.header = ctk.CTkFrame(self, fg_color="transparent", height=34)
         self.header.pack(fill="x", padx=0, pady=(0, 4))
 
-        arrow = "⌄" if expanded else "›"
         self.arrow_label = ctk.CTkLabel(
             self.header,
-            text=arrow,
+            text="⌄" if expanded else "›",
             text_color=APP_COLORS["muted"],
             font=ctk.CTkFont(size=16, weight="bold"),
             width=18
@@ -27,7 +25,7 @@ class SidebarSection(ctk.CTkFrame):
             self.header,
             text=title,
             text_color=APP_COLORS["muted"],
-            font=ctk.CTkFont(size=13, weight="bold")
+            font=self.fonts.get("section")
         )
         self.title_label.pack(side="left")
 
@@ -35,7 +33,7 @@ class SidebarSection(ctk.CTkFrame):
             self.header,
             text=count,
             text_color="#9bb1ff",
-            font=ctk.CTkFont(size=13, weight="bold")
+            font=self.fonts.get("section")
         )
         self.count_label.pack(side="right", padx=(6, 4))
 
@@ -43,10 +41,8 @@ class SidebarSection(ctk.CTkFrame):
         if expanded:
             self.content.pack(fill="x", padx=0, pady=(0, 8))
 
-        self.header.bind("<Button-1>", self.toggle)
-        self.arrow_label.bind("<Button-1>", self.toggle)
-        self.title_label.bind("<Button-1>", self.toggle)
-        self.count_label.bind("<Button-1>", self.toggle)
+        for widget in [self.header, self.arrow_label, self.title_label, self.count_label]:
+            widget.bind("<Button-1>", self.toggle)
 
     def toggle(self, _event=None):
         self.expanded = not self.expanded
@@ -57,9 +53,6 @@ class SidebarSection(ctk.CTkFrame):
         else:
             self.content.pack_forget()
 
-    def set_count(self, value: str):
-        self.count_label.configure(text=value)
-
 
 class SidebarItem(ctk.CTkFrame):
     def __init__(
@@ -69,24 +62,26 @@ class SidebarItem(ctk.CTkFrame):
         icon: str = "",
         level: int = 0,
         selected: bool = False,
-        command=None
+        command=None,
+        fonts: dict | None = None
     ):
-        bg_color = "#3c5f3e" if selected else "transparent"
+        self.text_value = text
+        self.level = level
+        self.command = command
+        self.selected = selected
+        self.fonts = fonts or {}
 
         super().__init__(
             master,
-            fg_color=bg_color,
+            fg_color="#3c5f3e" if selected else "transparent",
             corner_radius=0,
-            height=36
+            height=38
         )
 
-        self.command = command
-        self.selected = selected
+        self.inner = ctk.CTkFrame(self, fg_color="transparent")
+        self.inner.pack(fill="both", expand=True)
 
         pad_left = 14 + (level * 22)
-
-        self.inner = ctk.CTkFrame(self, fg_color="transparent")
-        self.inner.pack(fill="both", expand=True, padx=0, pady=0)
 
         self.icon_label = ctk.CTkLabel(
             self.inner,
@@ -100,24 +95,33 @@ class SidebarItem(ctk.CTkFrame):
         self.text_label = ctk.CTkLabel(
             self.inner,
             text=text,
-            text_color="#f1f5f9" if selected else APP_COLORS["text"],
-            font=ctk.CTkFont(size=13, weight="bold" if selected else "normal"),
+            text_color="#f8fafc" if selected else APP_COLORS["text"],
+            font=self.fonts.get("item_selected") if selected else self.fonts.get("item"),
             anchor="w"
         )
         self.text_label.pack(side="left", fill="x", expand=True)
 
-        self.bind("<Button-1>", self._on_click)
-        self.inner.bind("<Button-1>", self._on_click)
-        self.icon_label.bind("<Button-1>", self._on_click)
-        self.text_label.bind("<Button-1>", self._on_click)
+        for widget in [self, self.inner, self.icon_label, self.text_label]:
+            widget.bind("<Button-1>", self._on_click)
 
     def _on_click(self, _event=None):
         if self.command:
-            self.command()
+            self.command(self.text_value)
+
+    def set_selected(self, selected: bool):
+        self.selected = selected
+        self.configure(fg_color="#3c5f3e" if selected else "transparent")
+        self.icon_label.configure(
+            text_color="#d8dde6" if selected else APP_COLORS["muted"]
+        )
+        self.text_label.configure(
+            text_color="#f8fafc" if selected else APP_COLORS["text"],
+            font=self.fonts.get("item_selected") if selected else self.fonts.get("item")
+        )
 
 
 class LeftSidebar(ctk.CTkFrame):
-    def __init__(self, master):
+    def __init__(self, master, on_branch_select=None):
         super().__init__(
             master,
             fg_color=APP_COLORS["sidebar"],
@@ -127,13 +131,28 @@ class LeftSidebar(ctk.CTkFrame):
 
         self.pack_propagate(False)
 
-        self.selected_branch = "adfasdsaf"
+        self.on_branch_select = on_branch_select
+        self.selected_branch = "main"
+        self.branch_items: dict[str, SidebarItem] = {}
+        self.all_branches: list[str] = []
+
+        self.fonts = self._create_fonts()
 
         self._build_header()
         self._build_scroll_area()
         self._build_footer()
 
-        self.populate_demo()
+        self.set_branches(["main", "develop", "feature/ui-topbar"])
+
+    def _create_fonts(self):
+        return {
+            "title": ctk.CTkFont(family="Helvetica Neue", size=15, weight="bold"),
+            "section": ctk.CTkFont(family="Helvetica Neue", size=13, weight="bold"),
+            "item": ctk.CTkFont(family="Helvetica Neue", size=13),
+            "item_selected": ctk.CTkFont(family="Helvetica Neue", size=13, weight="bold"),
+            "footer": ctk.CTkFont(family="Helvetica Neue", size=12),
+            "search": ctk.CTkFont(family="Helvetica Neue", size=13),
+        }
 
     def _build_header(self):
         header = ctk.CTkFrame(self, fg_color="transparent", height=96)
@@ -152,9 +171,9 @@ class LeftSidebar(ctk.CTkFrame):
 
         self.viewing_label = ctk.CTkLabel(
             top_line,
-            text="Viewing 4",
+            text="Viewing 0",
             text_color=APP_COLORS["text"],
-            font=ctk.CTkFont(size=15, weight="bold")
+            font=self.fonts["title"]
         )
         self.viewing_label.pack(side="left")
 
@@ -168,9 +187,11 @@ class LeftSidebar(ctk.CTkFrame):
             corner_radius=8,
             fg_color="#1b1f27",
             border_color=APP_COLORS["border"],
-            text_color=APP_COLORS["text"]
+            text_color=APP_COLORS["text"],
+            font=self.fonts["search"]
         )
         self.search_entry.pack(fill="x", side="left", expand=True)
+        self.search_entry.bind("<KeyRelease>", self._on_filter_change)
 
         self.search_btn = ctk.CTkButton(
             search_row,
@@ -179,7 +200,8 @@ class LeftSidebar(ctk.CTkFrame):
             height=36,
             fg_color="transparent",
             hover_color="#323846",
-            text_color=APP_COLORS["muted"]
+            text_color=APP_COLORS["muted"],
+            font=ctk.CTkFont(size=16)
         )
         self.search_btn.pack(side="left", padx=(6, 0))
 
@@ -210,61 +232,17 @@ class LeftSidebar(ctk.CTkFrame):
 
         self.footer_label = ctk.CTkLabel(
             footer,
-            text="JeanHeberth/swaglabsMobile#8 is ready to merge",
+            text="Nenhuma notificação no momento",
             text_color=APP_COLORS["text"],
-            font=ctk.CTkFont(size=12),
+            font=self.fonts["footer"],
             anchor="w"
         )
         self.footer_label.pack(side="left", fill="x", expand=True)
 
-    def clear_sections(self):
+    def _clear_sections(self):
         for widget in self.scroll.winfo_children():
             widget.destroy()
-
-    def populate_demo(self):
-        self.clear_sections()
-
-        local = SidebarSection(self.scroll, "LOCAL", "3", expanded=True)
-        local.pack(fill="x", padx=0, pady=(4, 10))
-
-        SidebarItem(local.content, "feature", icon="▾", level=0).pack(fill="x")
-        SidebarItem(
-            local.content,
-            "adfasdsaf",
-            icon="⑂",
-            level=1,
-            selected=True
-        ).pack(fill="x")
-        SidebarItem(local.content, "main", icon="⑂", level=1).pack(fill="x")
-        SidebarItem(local.content, "testando_kraken", icon="⑂", level=1).pack(fill="x")
-
-        self._section_divider()
-
-        remote = SidebarSection(self.scroll, "REMOTE", "1", expanded=True)
-        remote.pack(fill="x", padx=0, pady=(0, 10))
-
-        SidebarItem(remote.content, "origin", icon="☁", level=0).pack(fill="x")
-        SidebarItem(remote.content, "main", icon="⑂", level=1).pack(fill="x")
-
-        self._section_divider()
-
-        cloud = SidebarSection(self.scroll, "CLOUD PATCHES", "0", expanded=True)
-        cloud.pack(fill="x", padx=0, pady=(0, 10))
-
-        self._section_divider()
-
-        prs = SidebarSection(self.scroll, "PULL REQUESTS", "0", expanded=False)
-        prs.pack(fill="x", padx=0, pady=(0, 6))
-
-        self._section_divider()
-
-        issues = SidebarSection(self.scroll, "ISSUES", "", expanded=False)
-        issues.pack(fill="x", padx=0, pady=(0, 6))
-
-        self._section_divider()
-
-        teams = SidebarSection(self.scroll, "TEAMS", "", expanded=False)
-        teams.pack(fill="x", padx=0, pady=(0, 6))
+        self.branch_items.clear()
 
     def _section_divider(self):
         ctk.CTkFrame(
@@ -273,48 +251,90 @@ class LeftSidebar(ctk.CTkFrame):
             height=1
         ).pack(fill="x", padx=0, pady=(0, 10))
 
-    def set_branches(self, branches: list[str]):
-        self.clear_sections()
-
-        local = SidebarSection(self.scroll, "LOCAL", str(len(branches)), expanded=True)
-        local.pack(fill="x", padx=0, pady=(4, 10))
-
-        for branch in branches:
-            selected = branch == self.selected_branch
-            SidebarItem(
-                local.content,
-                branch,
-                icon="⑂",
-                level=0,
-                selected=selected
-            ).pack(fill="x")
-
+    def _build_static_sections(self):
         self._section_divider()
 
-        remote = SidebarSection(self.scroll, "REMOTE", "1", expanded=True)
+        remote = SidebarSection(self.scroll, "REMOTE", "1", expanded=True, fonts=self.fonts)
         remote.pack(fill="x", padx=0, pady=(0, 10))
-        SidebarItem(remote.content, "origin", icon="☁", level=0).pack(fill="x")
-        SidebarItem(remote.content, "main", icon="⑂", level=1).pack(fill="x")
+        SidebarItem(remote.content, "origin", icon="☁", level=0, fonts=self.fonts).pack(fill="x")
+        SidebarItem(remote.content, "main", icon="⑂", level=1, fonts=self.fonts).pack(fill="x")
 
         self._section_divider()
 
-        cloud = SidebarSection(self.scroll, "CLOUD PATCHES", "0", expanded=True)
+        cloud = SidebarSection(self.scroll, "CLOUD PATCHES", "0", expanded=True, fonts=self.fonts)
         cloud.pack(fill="x", padx=0, pady=(0, 10))
 
         self._section_divider()
 
-        prs = SidebarSection(self.scroll, "PULL REQUESTS", "0", expanded=False)
+        prs = SidebarSection(self.scroll, "PULL REQUESTS", "0", expanded=False, fonts=self.fonts)
         prs.pack(fill="x", padx=0, pady=(0, 6))
 
         self._section_divider()
 
-        issues = SidebarSection(self.scroll, "ISSUES", "", expanded=False)
+        issues = SidebarSection(self.scroll, "ISSUES", "", expanded=False, fonts=self.fonts)
         issues.pack(fill="x", padx=0, pady=(0, 6))
 
         self._section_divider()
 
-        teams = SidebarSection(self.scroll, "TEAMS", "", expanded=False)
+        teams = SidebarSection(self.scroll, "TEAMS", "", expanded=False, fonts=self.fonts)
         teams.pack(fill="x", padx=0, pady=(0, 6))
+
+    def _render_branches(self, branches: list[str]):
+        self._clear_sections()
+
+        local = SidebarSection(self.scroll, "LOCAL", str(len(branches)), expanded=True, fonts=self.fonts)
+        local.pack(fill="x", padx=0, pady=(4, 10))
+
+        for branch in branches:
+            item = SidebarItem(
+                local.content,
+                branch,
+                icon="⑂",
+                level=0,
+                selected=(branch == self.selected_branch),
+                command=self._handle_branch_click,
+                fonts=self.fonts
+            )
+            item.pack(fill="x")
+            self.branch_items[branch] = item
+
+        self._build_static_sections()
+        self.set_viewing_count(len(branches))
+
+    def _handle_branch_click(self, branch_name: str):
+        self.selected_branch = branch_name
+
+        for name, item in self.branch_items.items():
+            item.set_selected(name == branch_name)
+
+        self.set_footer_message(f"Branch selecionada: {branch_name}")
+
+        if self.on_branch_select:
+            self.on_branch_select(branch_name)
+
+    def _on_filter_change(self, _event=None):
+        term = self.search_entry.get().strip().lower()
+
+        if not term:
+            filtered = self.all_branches
+        else:
+            filtered = [b for b in self.all_branches if term in b.lower()]
+
+        self._render_branches(filtered)
+
+    def set_branches(self, branches: list[str]):
+        self.all_branches = branches[:]
+
+        if self.selected_branch not in self.all_branches and self.all_branches:
+            self.selected_branch = self.all_branches[0]
+
+        self._render_branches(self.all_branches)
+
+    def set_selected_branch(self, branch_name: str):
+        self.selected_branch = branch_name
+
+        for name, item in self.branch_items.items():
+            item.set_selected(name == branch_name)
 
     def set_footer_message(self, message: str):
         self.footer_label.configure(text=message)

@@ -29,11 +29,13 @@ class MainWindow(ctk.CTk):
         self.top_bar = TopBar(
             self,
             on_select_repo=self.handle_select_repository,
-            on_action=self.handle_top_action
+            on_action=self.handle_top_action,
+            on_branch_change=self.handle_top_branch_changed
         )
+
         self.top_bar.grid(row=0, column=0, columnspan=3, sticky="nsew")
 
-        self.left_sidebar = LeftSidebar(self)
+        self.left_sidebar = LeftSidebar(self, on_branch_select=self.handle_branch_selected)
         self.left_sidebar.grid(row=1, column=0, sticky="nsew")
         self.left_sidebar.grid_propagate(False)
 
@@ -231,4 +233,45 @@ class MainWindow(ctk.CTk):
             "README.md",
             "src/main.py",
             "ui/top_bar.py",
+        ])
+
+    def handle_branch_selected(self, branch_name: str):
+        self.set_status(f"Branch selecionada: {branch_name}")
+
+        current_branches = self.left_sidebar.all_branches[:] if self.left_sidebar.all_branches else [branch_name]
+
+        if branch_name not in current_branches:
+            current_branches.insert(0, branch_name)
+
+        self.top_bar.set_branches(current_branches, current_branch=branch_name)
+        self.top_bar.set_selected_branch(branch_name)
+
+        self.center_panel.set_commits([
+            f"Branch atual: {branch_name}",
+            f"Commit recente da branch {branch_name}",
+            "Atualização de interface",
+            "Refatoração da topbar",
+        ])
+
+        self.right_panel.set_files([
+            "ui/left_sidebar.py",
+            "ui/main_window.py",
+            "ui/top_bar.py",
+        ])
+
+    def handle_top_branch_changed(self, branch_name: str):
+        self.left_sidebar.set_selected_branch(branch_name)
+        self.set_status(f"Branch selecionada no topo: {branch_name}")
+
+        self.center_panel.set_commits([
+            f"Branch atual: {branch_name}",
+            f"Commit recente da branch {branch_name}",
+            "Atualização pelo seletor do topo",
+            "Refatoração da interface",
+        ])
+
+        self.right_panel.set_files([
+            "ui/top_bar.py",
+            "ui/left_sidebar.py",
+            "ui/main_window.py",
         ])
