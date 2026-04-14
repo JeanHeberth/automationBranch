@@ -9,7 +9,7 @@ class SidebarSection(ctk.CTkFrame):
         self.expanded = expanded
         self.fonts = fonts or {}
 
-        self.header = ctk.CTkFrame(self, fg_color="transparent", height=34)
+        self.header = ctk.CTkFrame(self, fg_color="transparent", height=40)
         self.header.pack(fill="x", padx=0, pady=(0, 4))
 
         self.arrow_label = ctk.CTkLabel(

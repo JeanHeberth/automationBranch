@@ -99,7 +99,8 @@ class TopBar(ctk.CTkFrame):
 
         groups = [
             [("Undo", "undo.png"), ("Redo", "redo.png")],
-            [("Pull", "pull.png"), ("Push", "push.png"), ("Branch", "branch.png"), ("Stash", "stash.png"), ("Pop", "pop.png")],
+            [("Pull", "pull.png"), ("Push", "push.png"), ("Branch", "branch.png"), ("Stash", "stash.png"),
+             ("Pop", "pop.png")],
             [("Terminal", "terminal.png")],
         ]
 
@@ -151,28 +152,31 @@ class TopBar(ctk.CTkFrame):
             button.grid(row=0, column=index, padx=4, pady=0)
 
     def _create_toolbar_button(self, master, text, icon_name, command, width=92):
-        return ctk.CTkButton(
+        btn = ctk.CTkButton(
             master,
             text=text,
-            image=load_icon(icon_name, size=(18, 18)),
+            image=load_icon(icon_name, size=(22, 22)),
             compound="left",
             anchor="center",
             width=width,
-            height=34,
-            command=command,
+            height=38,
+            command=lambda: self._handle_click(btn, command),
             fg_color="transparent",
-            hover_color="#4b5563",
+            hover_color=APP_COLORS["hover"],
             text_color=APP_COLORS["text"],
             corner_radius=8,
             border_width=0,
-            font=ctk.CTkFont(size=11, weight="bold")
+            border_spacing=6,
+            font=ctk.CTkFont(size=12, weight="bold")
         )
+
+        return btn
 
     def _create_secondary_button(self, master, text, icon_name, command, width=92):
         return ctk.CTkButton(
             master,
             text=text,
-            image=load_icon(icon_name, size=(17, 17)),
+            image=load_icon(icon_name, size=(30, 30)),
             compound="left",
             anchor="center",
             width=width,
@@ -190,12 +194,12 @@ class TopBar(ctk.CTkFrame):
         return ctk.CTkButton(
             master,
             text="",
-            image=load_icon(icon_name, size=(17, 17)),
+            image=load_icon(icon_name, size=(22, 22)),
             width=32,
             height=32,
             command=command,
             fg_color="#3b414d",
-            hover_color="#4b5563",
+            hover_color="#2563EB",
             corner_radius=8,
             border_width=0
         )
@@ -233,3 +237,14 @@ class TopBar(ctk.CTkFrame):
 
     def get_selected_branch(self) -> str:
         return self.branch_var.get()
+
+    def _handle_click(self, button, command):
+        # resetar todos
+        for child in button.master.winfo_children():
+            if isinstance(child, ctk.CTkButton):
+                child.configure(fg_color="transparent")
+
+        # ativar atual
+        button.configure(fg_color=APP_COLORS["primary"])
+
+        command()
