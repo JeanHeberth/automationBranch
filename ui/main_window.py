@@ -1,4 +1,5 @@
 import os
+import webbrowser
 import customtkinter as ctk
 from tkinter import filedialog, messagebox, simpledialog
 
@@ -6,6 +7,8 @@ from ui.top_bar import TopBar
 from ui.left_sidebar import LeftSidebar
 from ui.center_panel import CenterPanel
 from ui.right_panel import RightPanel
+from ui.profile_popup import ProfileConnectPopup
+from ui.profile_menu import ProfileMenu
 from ui.theme import APP_COLORS
 
 from services.git_runner import GitServiceError
@@ -24,14 +27,23 @@ from services.commit_service import (
     stage_all_changes,
     commit_all_changes,
 )
-from services.pull_request_service import list_open_pull_requests
+from services.pull_request_service import (
+    list_open_pull_requests,
+    create_pull_request,
+    merge_pull_request,
+    find_open_pull_request_by_head,
+)
 from services.sync_service import (
     git_pull,
     git_push,
     git_stash,
     git_stash_pop,
 )
-
+from services.auth_service import (
+    get_current_session,
+    login_with_provider,
+    logout,
+)
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
@@ -47,6 +59,7 @@ class MainWindow(ctk.CTk):
         self.selected_repo_path: str | None = None
         self.repositories: dict[str, str] = {}
         self.is_updating_branch_ui = False
+        self.profile_menu_popup = None
 
         self._configure_window_size()
         self._configure_grid()
@@ -59,7 +72,12 @@ class MainWindow(ctk.CTk):
         )
         self.top_bar.grid(row=0, column=0, columnspan=3, sticky="nsew")
 
-        self.left_sidebar = LeftSidebar(self, on_branch_select=self.handle_branch_selected)
+        self.left_sidebar = LeftSidebar(
+            self,
+            on_branch_select=self.handle_branch_selected,
+            on_open_pr=self.handle_open_pr_item,
+            on_merge_pr=self.handle_merge_pr_item
+        )
         self.left_sidebar.grid(row=1, column=0, sticky="nsew")
         self.left_sidebar.grid_propagate(False)
 
@@ -82,6 +100,7 @@ class MainWindow(ctk.CTk):
         self.status_label.grid(row=2, column=0, columnspan=3, sticky="ew")
 
         self._load_initial_data()
+        self._refresh_profile_ui()
 
     def _configure_window_size(self):
         screen_width = self.winfo_screenwidth()
@@ -118,6 +137,50 @@ class MainWindow(ctk.CTk):
         self.center_panel.set_current_branch("")
         self.center_panel.set_commit_rows([])
         self.right_panel.set_files_grouped([], [])
+
+    def _refresh_profile_ui(self):
+        session = get_current_session()
+
+        if session.get("is_authenticated"):
+            label = session.get("provider", "Conta")
+        else:
+            label = "Profile"
+
+        self.top_bar.set_profile_label(label)
+
+    def _open_profile_connect_popup(self):
+        ProfileConnectPopup(
+            self,
+            on_github=self._connect_github,
+            on_google=self._connect_google
+        )
+
+    def _open_profile_menu(self):
+        if self.profile_menu_popup is not None and self.profile_menu_popup.winfo_exists():
+            self.profile_menu_popup.destroy()
+
+        self.profile_menu_popup = ProfileMenu(
+            self,
+            anchor_widget=self.top_bar.profile_btn,
+            session_data=get_current_session(),
+            on_connect=self._open_profile_connect_popup,
+            on_logout=self._logout_profile
+        )
+
+    def _connect_github(self):
+        session = login_with_provider("github")
+        self._refresh_profile_ui()
+        self.set_status(f"Conta conectada com sucesso via {session['provider']}.")
+
+    def _connect_google(self):
+        session = login_with_provider("google")
+        self._refresh_profile_ui()
+        self.set_status(f"Conta conectada com sucesso via {session['provider']}.")
+
+    def _logout_profile(self):
+        logout()
+        self._refresh_profile_ui()
+        self.set_status("Conta desconectada com sucesso.")
 
     def set_status(self, text: str):
         self.status_label.configure(text=text)
@@ -167,8 +230,11 @@ class MainWindow(ctk.CTk):
             self.left_sidebar.set_pull_requests([])
             return
 
-        prs = list_open_pull_requests(self.selected_repo_path)
-        self.left_sidebar.set_pull_requests(prs)
+        try:
+            prs = list_open_pull_requests(self.selected_repo_path)
+            self.left_sidebar.set_pull_requests(prs)
+        except GitServiceError:
+            self.left_sidebar.set_pull_requests([])
 
     def sync_branch_ui(self, branch_name: str):
         if not self.selected_repo_path:
@@ -249,11 +315,203 @@ class MainWindow(ctk.CTk):
             messagebox.showerror("Erro no commit", str(exc))
             self.set_status("Falha ao executar commit.")
 
+    def _handle_open_pr(self):
+        if not self.selected_repo_path:
+            messagebox.showwarning(
+                "Repositório não selecionado",
+                "Selecione um repositório antes de abrir Pull Request."
+            )
+            return
+
+        current_branch = get_current_branch(self.selected_repo_path)
+
+        if current_branch == "main":
+            messagebox.showwarning(
+                "Branch inválida",
+                "Não faz sentido abrir PR da branch main para ela mesma."
+            )
+            return
+
+        existing_pr = find_open_pull_request_by_head(self.selected_repo_path, current_branch)
+        if existing_pr:
+            self.load_pull_requests()
+            self.set_status(f"PR já existe para a branch {current_branch}.")
+            messagebox.showinfo(
+                "Pull Request existente",
+                f"PR #{existing_pr['number']} já está aberto.\n\n{existing_pr['title']}\n{existing_pr['url']}"
+            )
+            return
+
+        title = simpledialog.askstring(
+            "Abrir Pull Request",
+            "Título do PR:",
+            initialvalue=f"{current_branch} -> main"
+        )
+        if not title:
+            return
+
+        body = simpledialog.askstring(
+            "Descrição do PR",
+            "Descrição do PR (opcional):",
+            initialvalue=""
+        )
+        if body is None:
+            body = ""
+
+        try:
+            pr = create_pull_request(
+                self.selected_repo_path,
+                title=title,
+                body=body,
+                base_branch="main",
+                head_branch=current_branch
+            )
+
+            self.load_pull_requests()
+            self.set_status(f"PR aberto com sucesso: #{pr['number']}")
+            messagebox.showinfo(
+                "Pull Request criado",
+                f"PR #{pr['number']} criado com sucesso.\n\n{pr['title']}\n{pr['url']}"
+            )
+
+        except GitServiceError as exc:
+            messagebox.showerror("Erro ao abrir PR", str(exc))
+            self.set_status("Falha ao abrir Pull Request.")
+
+    def _handle_merge_pr(self):
+        if not self.selected_repo_path:
+            messagebox.showwarning(
+                "Repositório não selecionado",
+                "Selecione um repositório antes de mergear Pull Request."
+            )
+            return
+
+        current_branch = get_current_branch(self.selected_repo_path)
+        current_pr = find_open_pull_request_by_head(self.selected_repo_path, current_branch)
+
+        pr_number = None
+        pr_title = ""
+
+        if current_pr:
+            pr_number = current_pr["number"]
+            pr_title = current_pr["title"]
+        else:
+            prs = list_open_pull_requests(self.selected_repo_path)
+
+            if not prs:
+                messagebox.showwarning(
+                    "Sem Pull Requests",
+                    "Não há Pull Requests abertos para mergear."
+                )
+                return
+
+            if len(prs) == 1:
+                pr_number = prs[0]["number"]
+                pr_title = prs[0]["title"]
+            else:
+                selected = simpledialog.askstring(
+                    "Merge Pull Request",
+                    "Digite o número do PR que deseja mergear:"
+                )
+                if not selected:
+                    return
+
+                try:
+                    pr_number = int(selected)
+                except ValueError:
+                    messagebox.showwarning("Valor inválido", "Digite um número de PR válido.")
+                    return
+
+                for pr in prs:
+                    if pr["number"] == pr_number:
+                        pr_title = pr["title"]
+                        break
+
+        confirm = messagebox.askyesno(
+            "Confirmar merge",
+            f"Deseja mergear o PR #{pr_number}?\n\n{pr_title}"
+        )
+        if not confirm:
+            return
+
+        try:
+            result = merge_pull_request(self.selected_repo_path, pr_number)
+
+            self.load_pull_requests()
+            current_branch = get_current_branch(self.selected_repo_path)
+            self.sync_branch_ui(current_branch)
+
+            self.set_status(f"PR #{pr_number} mergeado com sucesso.")
+            messagebox.showinfo(
+                "Merge realizado",
+                result.get("message", f"PR #{pr_number} mergeado com sucesso.")
+            )
+
+        except GitServiceError as exc:
+            messagebox.showerror("Erro ao mergear PR", str(exc))
+            self.set_status("Falha ao mergear Pull Request.")
+
+    def handle_open_pr_item(self, pr: dict):
+        url = pr.get("url", "").strip()
+        if not url:
+            messagebox.showwarning("PR sem URL", "Esse Pull Request não possui URL para abrir.")
+            return
+
+        try:
+            webbrowser.open(url)
+            self.set_status(f"Abrindo PR #{pr.get('number')} no navegador.")
+        except Exception as exc:
+            messagebox.showerror("Erro ao abrir PR", str(exc))
+
+    def handle_merge_pr_item(self, pr: dict):
+        pr_number = pr.get("number")
+        pr_title = pr.get("title", "")
+
+        if not pr_number:
+            messagebox.showwarning("PR inválido", "Não foi possível identificar o número do PR.")
+            return
+
+        confirm = messagebox.askyesno(
+            "Confirmar merge",
+            f"Deseja mergear o PR #{pr_number}?\n\n{pr_title}"
+        )
+        if not confirm:
+            return
+
+        try:
+            result = merge_pull_request(self.selected_repo_path, int(pr_number))
+
+            self.load_pull_requests()
+            current_branch = get_current_branch(self.selected_repo_path)
+            self.sync_branch_ui(current_branch)
+
+            self.set_status(f"PR #{pr_number} mergeado com sucesso.")
+            messagebox.showinfo(
+                "Merge realizado",
+                result.get("message", f"PR #{pr_number} mergeado com sucesso.")
+            )
+
+        except GitServiceError as exc:
+            messagebox.showerror("Erro ao mergear PR", str(exc))
+            self.set_status("Falha ao mergear Pull Request.")
+
     def handle_top_action(self, action_name: str):
         self.set_status(f"Ação executada: {action_name}")
 
         if action_name == "Terminal":
             messagebox.showinfo("Terminal", "Depois podemos conectar isso ao terminal real.")
+            return
+
+        if action_name == "Open PR":
+            self._handle_open_pr()
+            return
+
+        if action_name == "Merge PR":
+            self._handle_merge_pr()
+            return
+
+        if action_name == "Profile":
+            self._open_profile_menu()
             return
 
         if not self.selected_repo_path and action_name in {"Pull", "Push", "Branch", "Stash", "Pop", "Refresh"}:
@@ -319,8 +577,6 @@ class MainWindow(ctk.CTk):
                 messagebox.showinfo("Actions", "Menu de ações extras ainda será implementado.")
             elif action_name == "Search":
                 messagebox.showinfo("Search", "Busca ainda será implementada.")
-            elif action_name == "Profile":
-                messagebox.showinfo("Profile", "Perfil ainda será implementado.")
 
         except GitServiceError as exc:
             messagebox.showerror("Erro Git", str(exc))
