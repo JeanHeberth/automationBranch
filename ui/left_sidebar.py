@@ -132,7 +132,7 @@ class LeftSidebar(ctk.CTkFrame):
         self.pack_propagate(False)
 
         self.on_branch_select = on_branch_select
-        self.selected_branch = "main"
+        self.selected_branch = ""
         self.branch_items: dict[str, SidebarItem] = {}
         self.all_branches: list[str] = []
         self.remote_branches: list[str] = []
@@ -144,7 +144,7 @@ class LeftSidebar(ctk.CTkFrame):
         self._build_scroll_area()
         self._build_footer()
 
-        self.set_branches(["main", "develop", "feature/ui-topbar"], remote_branches=["origin/main"], remotes=["origin"])
+        self.set_branches([], remote_branches=[], remotes=[])
 
     def _create_fonts(self):
         return {
@@ -234,7 +234,7 @@ class LeftSidebar(ctk.CTkFrame):
 
         self.footer_label = ctk.CTkLabel(
             footer,
-            text="Nenhuma notificação no momento",
+            text="Nenhum repositório selecionado",
             text_color=APP_COLORS["text"],
             font=self.fonts["footer"],
             anchor="w"
@@ -257,6 +257,15 @@ class LeftSidebar(ctk.CTkFrame):
         local = SidebarSection(self.scroll, "LOCAL", str(len(branches)), expanded=True, fonts=self.fonts)
         local.pack(fill="x", padx=0, pady=(4, 10))
 
+        if not branches:
+            ctk.CTkLabel(
+                local.content,
+                text="Nenhuma branch local",
+                text_color=APP_COLORS["muted"],
+                font=self.fonts["item"]
+            ).pack(anchor="w", padx=16, pady=(2, 8))
+            return
+
         for branch in branches:
             item = SidebarItem(
                 local.content,
@@ -275,6 +284,12 @@ class LeftSidebar(ctk.CTkFrame):
         remote.pack(fill="x", padx=0, pady=(0, 10))
 
         if not remotes:
+            ctk.CTkLabel(
+                remote.content,
+                text="Nenhum remote",
+                text_color=APP_COLORS["muted"],
+                font=self.fonts["item"]
+            ).pack(anchor="w", padx=16, pady=(2, 8))
             return
 
         for remote_name in remotes:
@@ -292,6 +307,15 @@ class LeftSidebar(ctk.CTkFrame):
                 if branch.startswith(prefix):
                     related.append(branch[len(prefix):])
 
+            if not related:
+                ctk.CTkLabel(
+                    remote.content,
+                    text="Nenhuma branch remota",
+                    text_color=APP_COLORS["muted"],
+                    font=self.fonts["item"]
+                ).pack(anchor="w", padx=38, pady=(2, 8))
+                continue
+
             for branch_name in related:
                 SidebarItem(
                     remote.content,
@@ -303,26 +327,21 @@ class LeftSidebar(ctk.CTkFrame):
 
     def _build_static_sections(self):
         self._section_divider()
-
         self._render_remote_section(self.remote_branches, self.remotes)
 
         self._section_divider()
-
         cloud = SidebarSection(self.scroll, "CLOUD PATCHES", "0", expanded=True, fonts=self.fonts)
         cloud.pack(fill="x", padx=0, pady=(0, 10))
 
         self._section_divider()
-
         prs = SidebarSection(self.scroll, "PULL REQUESTS", "0", expanded=False, fonts=self.fonts)
         prs.pack(fill="x", padx=0, pady=(0, 6))
 
         self._section_divider()
-
         issues = SidebarSection(self.scroll, "ISSUES", "", expanded=False, fonts=self.fonts)
         issues.pack(fill="x", padx=0, pady=(0, 6))
 
         self._section_divider()
-
         teams = SidebarSection(self.scroll, "TEAMS", "", expanded=False, fonts=self.fonts)
         teams.pack(fill="x", padx=0, pady=(0, 6))
 
@@ -354,12 +373,12 @@ class LeftSidebar(ctk.CTkFrame):
         self._render_branches(filtered)
 
     def set_branches(self, branches: list[str], remote_branches: list[str] | None = None, remotes: list[str] | None = None):
-        self.all_branches = branches[:]
+        self.all_branches = branches[:] if branches else []
         self.remote_branches = remote_branches[:] if remote_branches else []
         self.remotes = remotes[:] if remotes else []
 
-        if self.selected_branch not in self.all_branches and self.all_branches:
-            self.selected_branch = self.all_branches[0]
+        if self.selected_branch not in self.all_branches:
+            self.selected_branch = self.all_branches[0] if self.all_branches else ""
 
         self._render_branches(self.all_branches)
 

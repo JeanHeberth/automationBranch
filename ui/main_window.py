@@ -71,7 +71,7 @@ class MainWindow(ctk.CTk):
 
         self.status_label = ctk.CTkLabel(
             self,
-            text="Projeto carregado com sucesso.",
+            text="Selecione um repositório para começar.",
             anchor="w",
             fg_color=APP_COLORS["topbar"],
             text_color=APP_COLORS["text"],
@@ -111,14 +111,11 @@ class MainWindow(ctk.CTk):
         self.grid_columnconfigure(2, weight=0, minsize=340)
 
     def _load_initial_data(self):
-        self.left_sidebar.set_branches(
-            ["main", "develop", "feature/ui-topbar"],
-            remote_branches=["origin/main"],
-            remotes=["origin"]
-        )
-        self.center_panel.set_current_branch("main")
+        self.top_bar.set_branches([], current_branch="")
+        self.left_sidebar.set_branches([], remote_branches=[], remotes=[])
+        self.center_panel.set_current_branch("")
         self.center_panel.set_commits([
-            "Selecione um repositório Git para carregar os dados reais."
+            "Nenhum repositório selecionado."
         ])
         self.right_panel.set_files_grouped([], [])
 
@@ -127,7 +124,7 @@ class MainWindow(ctk.CTk):
 
     def load_commits_for_branch(self, branch_name: str):
         if not self.selected_repo_path:
-            self.center_panel.set_current_branch(branch_name)
+            self.center_panel.set_current_branch("")
             self.center_panel.set_commits([
                 "Nenhum repositório selecionado."
             ])

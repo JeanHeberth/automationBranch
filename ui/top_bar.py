@@ -17,7 +17,7 @@ class TopBar(ctk.CTkFrame):
         self.on_branch_change = on_branch_change
 
         self.repo_var = ctk.StringVar(value="Selecione um repositório")
-        self.branch_var = ctk.StringVar(value="main")
+        self.branch_var = ctk.StringVar(value="Nenhuma branch")
 
         self.grid_columnconfigure(0, weight=3)
         self.grid_columnconfigure(1, weight=5)
@@ -71,7 +71,7 @@ class TopBar(ctk.CTkFrame):
 
         self.branch_menu = ctk.CTkOptionMenu(
             frame,
-            values=["main", "develop"],
+            values=["Nenhuma branch"],
             variable=self.branch_var,
             width=170,
             height=34,
@@ -81,7 +81,8 @@ class TopBar(ctk.CTkFrame):
             text_color=APP_COLORS["text"],
             corner_radius=8,
             font=ctk.CTkFont(size=13),
-            command=self._handle_branch_menu_change
+            command=self._handle_branch_menu_change,
+            state="disabled"
         )
         self.branch_menu.grid(row=1, column=2, padx=(0, 8), pady=(4, 0))
 
@@ -169,25 +170,36 @@ class TopBar(ctk.CTkFrame):
             border_width=0
         )
 
+    def _handle_branch_menu_change(self, selected_branch: str):
+        if selected_branch == "Nenhuma branch":
+            return
+
+        if self.on_branch_change:
+            self.on_branch_change(selected_branch)
+
     def set_repositories(self, repo_names: list[str], current_name: str):
         values = repo_names if repo_names else ["Selecione um repositório"]
         self.repo_menu.configure(values=values)
         self.repo_var.set(current_name if current_name else values[0])
 
-    def set_branches(self, branches: list[str], current_branch: str = "main"):
-        values = branches if branches else ["main"]
-        self.branch_menu.configure(values=values)
-        self.branch_var.set(current_branch if current_branch in values else values[0])
+    def set_branches(self, branches: list[str], current_branch: str = ""):
+        if not branches:
+            self.branch_menu.configure(values=["Nenhuma branch"], state="disabled")
+            self.branch_var.set("Nenhuma branch")
+            return
+
+        self.branch_menu.configure(values=branches, state="normal")
+        self.branch_var.set(current_branch if current_branch in branches else branches[0])
+
+    def set_selected_branch(self, branch_name: str):
+        if not branch_name:
+            self.branch_var.set("Nenhuma branch")
+            return
+
+        self.branch_var.set(branch_name)
 
     def get_selected_repository(self) -> str:
         return self.repo_var.get()
 
     def get_selected_branch(self) -> str:
         return self.branch_var.get()
-
-    def _handle_branch_menu_change(self, selected_branch: str):
-        if self.on_branch_change:
-            self.on_branch_change(selected_branch)
-
-    def set_selected_branch(self, branch_name: str):
-        self.branch_var.set(branch_name)
