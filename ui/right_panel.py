@@ -7,29 +7,65 @@ class RightPanel(ctk.CTkFrame):
         super().__init__(
             master,
             fg_color=APP_COLORS["panel"],
-            corner_radius=0,
-            width=320
+            corner_radius=0
         )
 
-        ctk.CTkLabel(
+        self._build_header()
+        self._build_list()
+
+    def _build_header(self):
+        header = ctk.CTkFrame(self, fg_color="transparent", height=48)
+        header.pack(fill="x", padx=10, pady=(8, 4))
+
+        self.title = ctk.CTkLabel(
+            header,
+            text="Arquivos",
+            text_color=APP_COLORS["text"],
+            font=ctk.CTkFont(size=16, weight="bold")
+        )
+        self.title.pack(side="left")
+
+    def _build_list(self):
+        self.scroll = ctk.CTkScrollableFrame(
             self,
-            text="Changes / Commit",
-            font=ctk.CTkFont(size=18, weight="bold")
-        ).pack(anchor="w", padx=16, pady=(16, 8))
+            fg_color="transparent"
+        )
+        self.scroll.pack(fill="both", expand=True, padx=6, pady=6)
 
-        self.files_box = ctk.CTkTextbox(self, height=180, corner_radius=8)
-        self.files_box.pack(fill="x", padx=16, pady=(0, 12))
-        self.set_files(["src/test/java/.../DepartamentoServiceTest.java"])
-
-        self.commit_msg = ctk.CTkTextbox(self, height=120, corner_radius=8)
-        self.commit_msg.pack(fill="x", padx=16, pady=(0, 12))
-        self.commit_msg.insert("1.0", "Commit summary")
-
-        self.commit_btn = ctk.CTkButton(self, text="Commit")
-        self.commit_btn.pack(fill="x", padx=16, pady=(0, 16))
+    def clear(self):
+        for widget in self.scroll.winfo_children():
+            widget.destroy()
 
     def set_files(self, files: list[str]):
-        self.files_box.configure(state="normal")
-        self.files_box.delete("1.0", "end")
-        self.files_box.insert("1.0", "\n".join(files))
-        self.files_box.configure(state="disabled")
+        self.clear()
+
+        if not files:
+            self._empty_state("Nenhum arquivo encontrado.")
+            return
+
+        for file in files:
+            self._create_file_item(file)
+
+    def _create_file_item(self, text: str):
+        item = ctk.CTkFrame(
+            self.scroll,
+            fg_color="#2a2f3a",
+            corner_radius=8,
+            height=40
+        )
+        item.pack(fill="x", padx=6, pady=3)
+
+        label = ctk.CTkLabel(
+            item,
+            text=text,
+            text_color=APP_COLORS["text"],
+            anchor="w"
+        )
+        label.pack(fill="x", padx=10, pady=8)
+
+    def _empty_state(self, text: str):
+        ctk.CTkLabel(
+            self.scroll,
+            text=text,
+            text_color=APP_COLORS["muted"]
+        ).pack(pady=20)

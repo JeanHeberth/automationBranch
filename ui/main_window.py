@@ -1,12 +1,28 @@
 import os
 import customtkinter as ctk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, simpledialog
 
 from ui.top_bar import TopBar
 from ui.left_sidebar import LeftSidebar
 from ui.center_panel import CenterPanel
 from ui.right_panel import RightPanel
 from ui.theme import APP_COLORS
+
+from services.git_runner import GitServiceError
+from services.branch_service import (
+    is_git_repository,
+    get_local_branches,
+    get_current_branch,
+    checkout_branch,
+    create_branch,
+)
+from services.commit_service import get_recent_commits
+from services.sync_service import (
+    git_pull,
+    git_push,
+    git_stash,
+    git_stash_pop,
+)
 
 
 ctk.set_appearance_mode("dark")
@@ -22,6 +38,7 @@ class MainWindow(ctk.CTk):
 
         self.selected_repo_path: str | None = None
         self.repositories: dict[str, str] = {}
+        self.is_updating_branch_ui = False
 
         self._configure_window_size()
         self._configure_grid()
@@ -32,7 +49,6 @@ class MainWindow(ctk.CTk):
             on_action=self.handle_top_action,
             on_branch_change=self.handle_top_branch_changed
         )
-
         self.top_bar.grid(row=0, column=0, columnspan=3, sticky="nsew")
 
         self.left_sidebar = LeftSidebar(self, on_branch_select=self.handle_branch_selected)
@@ -89,47 +105,158 @@ class MainWindow(ctk.CTk):
     def _load_initial_data(self):
         self.left_sidebar.set_branches(["main", "develop", "feature/ui-topbar"])
         self.center_panel.set_commits([
-            "// WIP",
-            "Merge pull request #41 alterando-arquivo",
-            "Criado arquivo .yml",
-            "Merge pull request #40 criando-sse",
-            "criado um server.address",
-            "Merge pull request #39 CAE-36",
+            "Selecione um repositório Git para carregar os dados reais."
         ])
         self.right_panel.set_files([
-            "src/test/java/.../DepartamentoServiceTest.java"
+            "Nenhum arquivo carregado."
         ])
 
     def set_status(self, text: str):
         self.status_label.configure(text=text)
 
+    def load_commits_for_branch(self, branch_name: str):
+        if not self.selected_repo_path:
+            self.center_panel.set_commits([
+                "Nenhum repositório selecionado."
+            ])
+            return
+
+        try:
+            commits = get_recent_commits(self.selected_repo_path, branch_name, limit=15)
+
+            if not commits:
+                self.center_panel.set_commits([
+                    f"Nenhum commit encontrado para a branch {branch_name}."
+                ])
+            else:
+                self.center_panel.set_commits(commits)
+
+        except GitServiceError as exc:
+            self.center_panel.set_commits([
+                "Erro ao carregar commits.",
+                str(exc)
+            ])
+
+    def sync_branch_ui(self, branch_name: str):
+        if not self.selected_repo_path:
+            return
+
+        branches = get_local_branches(self.selected_repo_path)
+
+        self.is_updating_branch_ui = True
+        try:
+            self.top_bar.set_branches(branches, current_branch=branch_name)
+            self.top_bar.set_selected_branch(branch_name)
+
+            self.left_sidebar.set_branches(branches)
+            self.left_sidebar.set_selected_branch(branch_name)
+            self.left_sidebar.set_footer_message(f"Branch atual: {branch_name}")
+            self.left_sidebar.set_viewing_count(len(branches))
+        finally:
+            self.is_updating_branch_ui = False
+
+        self.load_commits_for_branch(branch_name)
+
+    def perform_branch_checkout(self, branch_name: str):
+        if not self.selected_repo_path:
+            messagebox.showwarning(
+                "Repositório não selecionado",
+                "Selecione um repositório antes de trocar de branch."
+            )
+            return
+
+        try:
+            checkout_branch(self.selected_repo_path, branch_name)
+            current_branch = get_current_branch(self.selected_repo_path)
+
+            self.sync_branch_ui(current_branch)
+
+            self.right_panel.set_files([
+                "services/branch_service.py",
+                "ui/main_window.py",
+                ".git/HEAD",
+            ])
+
+            self.set_status(f"Checkout realizado com sucesso para: {current_branch}")
+
+        except GitServiceError as exc:
+            messagebox.showerror("Erro no checkout", str(exc))
+            self.set_status(f"Falha ao trocar para a branch: {branch_name}")
+
     def handle_top_action(self, action_name: str):
         self.set_status(f"Ação executada: {action_name}")
 
         if action_name == "Terminal":
-            messagebox.showinfo("Terminal", "Depois vamos conectar isso ao terminal real.")
-        elif action_name == "Pull":
-            messagebox.showinfo("Pull", "Depois vamos conectar ao git pull real.")
-        elif action_name == "Push":
-            messagebox.showinfo("Push", "Depois vamos conectar ao git push real.")
-        elif action_name == "Branch":
-            messagebox.showinfo("Branch", "Depois vamos conectar à criação de branch real.")
-        elif action_name == "Stash":
-            messagebox.showinfo("Stash", "Depois vamos conectar ao git stash real.")
-        elif action_name == "Pop":
-            messagebox.showinfo("Pop", "Depois vamos conectar ao git stash pop real.")
-        elif action_name == "Undo":
-            messagebox.showinfo("Undo", "Função de desfazer ainda será implementada.")
-        elif action_name == "Redo":
-            messagebox.showinfo("Redo", "Função de refazer ainda será implementada.")
-        elif action_name == "Actions":
-            messagebox.showinfo("Actions", "Menu de ações extras ainda será implementado.")
-        elif action_name == "Search":
-            messagebox.showinfo("Search", "Busca ainda será implementada.")
-        elif action_name == "Profile":
-            messagebox.showinfo("Profile", "Perfil ainda será implementado.")
-        elif action_name == "Refresh":
-            messagebox.showinfo("Refresh", "Atualização ainda será implementada.")
+            messagebox.showinfo("Terminal", "Depois podemos conectar isso ao terminal real.")
+            return
+
+        if not self.selected_repo_path and action_name in {"Pull", "Push", "Branch", "Stash", "Pop", "Refresh"}:
+            messagebox.showwarning(
+                "Repositório não selecionado",
+                "Selecione um repositório antes de executar ações Git."
+            )
+            return
+
+        try:
+            if action_name == "Pull":
+                result = git_pull(self.selected_repo_path)
+                current_branch = get_current_branch(self.selected_repo_path)
+                self.sync_branch_ui(current_branch)
+                self.set_status("Pull executado com sucesso.")
+                messagebox.showinfo("Pull", result or "Pull executado com sucesso.")
+
+            elif action_name == "Push":
+                result = git_push(self.selected_repo_path)
+                self.set_status("Push executado com sucesso.")
+                messagebox.showinfo("Push", result or "Push executado com sucesso.")
+
+            elif action_name == "Branch":
+                branch_name = simpledialog.askstring("Criar branch", "Digite o nome da nova branch:")
+                if not branch_name:
+                    return
+
+                result = create_branch(self.selected_repo_path, branch_name.strip())
+                current_branch = get_current_branch(self.selected_repo_path)
+                self.sync_branch_ui(current_branch)
+
+                self.right_panel.set_files([
+                    "services/branch_service.py",
+                    ".git/HEAD",
+                ])
+
+                self.set_status(f"Branch criada com sucesso: {current_branch}")
+                messagebox.showinfo("Nova branch", result or f"Branch '{current_branch}' criada com sucesso.")
+
+            elif action_name == "Stash":
+                result = git_stash(self.selected_repo_path)
+                self.set_status("Stash executado com sucesso.")
+                messagebox.showinfo("Stash", result or "Stash executado com sucesso.")
+
+            elif action_name == "Pop":
+                result = git_stash_pop(self.selected_repo_path)
+                self.set_status("Stash pop executado com sucesso.")
+                messagebox.showinfo("Pop", result or "Stash pop executado com sucesso.")
+
+            elif action_name == "Refresh":
+                current_branch = get_current_branch(self.selected_repo_path)
+                self.sync_branch_ui(current_branch)
+                self.set_status("Dados atualizados com sucesso.")
+                messagebox.showinfo("Refresh", "Dados atualizados com sucesso.")
+
+            elif action_name == "Undo":
+                messagebox.showinfo("Undo", "Função de desfazer ainda será implementada.")
+            elif action_name == "Redo":
+                messagebox.showinfo("Redo", "Função de refazer ainda será implementada.")
+            elif action_name == "Actions":
+                messagebox.showinfo("Actions", "Menu de ações extras ainda será implementado.")
+            elif action_name == "Search":
+                messagebox.showinfo("Search", "Busca ainda será implementada.")
+            elif action_name == "Profile":
+                messagebox.showinfo("Profile", "Perfil ainda será implementado.")
+
+        except GitServiceError as exc:
+            messagebox.showerror("Erro Git", str(exc))
+            self.set_status(f"Erro ao executar ação: {action_name}")
 
     def handle_select_repository(self):
         folder = filedialog.askdirectory(title="Selecionar repositório")
@@ -137,11 +264,10 @@ class MainWindow(ctk.CTk):
         if not folder:
             return
 
-        git_folder = os.path.join(folder, ".git")
-        if not os.path.isdir(git_folder):
+        if not is_git_repository(folder):
             messagebox.showwarning(
                 "Repositório inválido",
-                "A pasta selecionada não parece ser um repositório Git."
+                "A pasta selecionada não parece ser um repositório Git válido."
             )
             return
 
@@ -152,126 +278,25 @@ class MainWindow(ctk.CTk):
         repo_names = list(self.repositories.keys())
         self.top_bar.set_repositories(repo_names, repo_name)
 
-        self.set_status(f"Repositório selecionado: {repo_name} ({folder})")
+        try:
+            current_branch = get_current_branch(folder)
 
-        self.top_bar.set_branches(["main", "develop", "feature/nova-ui"], "main")
-        self.left_sidebar.set_branches(["main", "develop", "feature/nova-ui"])
-        self.center_panel.set_commits([
-            f"Repositório {repo_name} carregado",
-            "Commit de exemplo 1",
-            "Commit de exemplo 2",
-        ])
-        self.right_panel.set_files([
-            "README.md",
-            "src/main.py",
-            "ui/top_bar.py",
-        ])
+            self.sync_branch_ui(current_branch)
 
-    def set_status(self, text: str):
-        self.status_label.configure(text=text)
+            self.right_panel.set_files([
+                ".git/config",
+                ".git/HEAD",
+            ])
 
-    def handle_top_action(self, action_name: str):
-        self.set_status(f"Ação executada: {action_name}")
+            self.set_status(f"Repositório selecionado: {repo_name} ({folder})")
 
-        if action_name == "Terminal":
-            messagebox.showinfo("Terminal", "Depois vamos conectar isso ao terminal real.")
-        elif action_name == "Pull":
-            messagebox.showinfo("Pull", "Depois vamos conectar ao git pull real.")
-        elif action_name == "Push":
-            messagebox.showinfo("Push", "Depois vamos conectar ao git push real.")
-        elif action_name == "Branch":
-            messagebox.showinfo("Branch", "Depois vamos conectar à criação de branch real.")
-        elif action_name == "Stash":
-            messagebox.showinfo("Stash", "Depois vamos conectar ao git stash real.")
-        elif action_name == "Pop":
-            messagebox.showinfo("Pop", "Depois vamos conectar ao git stash pop real.")
-        elif action_name == "Undo":
-            messagebox.showinfo("Undo", "Função de desfazer ainda será implementada.")
-        elif action_name == "Redo":
-            messagebox.showinfo("Redo", "Função de refazer ainda será implementada.")
-        elif action_name == "Actions":
-            messagebox.showinfo("Actions", "Menu de ações extras ainda será implementado.")
-        elif action_name == "Search":
-            messagebox.showinfo("Search", "Busca ainda será implementada.")
-        elif action_name == "Profile":
-            messagebox.showinfo("Profile", "Perfil ainda será implementado.")
-        elif action_name == "Refresh":
-            messagebox.showinfo("Refresh", "Atualização ainda será implementada.")
-
-    def handle_select_repository(self):
-        folder = filedialog.askdirectory(title="Selecionar repositório")
-
-        if not folder:
-            return
-
-        git_folder = os.path.join(folder, ".git")
-        if not os.path.isdir(git_folder):
-            messagebox.showwarning(
-                "Repositório inválido",
-                "A pasta selecionada não parece ser um repositório Git."
-            )
-            return
-
-        repo_name = os.path.basename(folder)
-        self.repositories[repo_name] = folder
-        self.selected_repo_path = folder
-
-        repo_names = list(self.repositories.keys())
-        self.top_bar.set_repositories(repo_names, repo_name)
-
-        self.set_status(f"Repositório selecionado: {repo_name} ({folder})")
-
-        # dados temporários até conectarmos com git real
-        self.top_bar.set_branches(["main", "develop", "feature/nova-ui"], "main")
-        self.left_sidebar.set_branches(["main", "develop", "feature/nova-ui"])
-        self.center_panel.set_commits([
-            f"Repositório {repo_name} carregado",
-            "Commit de exemplo 1",
-            "Commit de exemplo 2",
-        ])
-        self.right_panel.set_files([
-            "README.md",
-            "src/main.py",
-            "ui/top_bar.py",
-        ])
+        except GitServiceError as exc:
+            messagebox.showerror("Erro Git", str(exc))
 
     def handle_branch_selected(self, branch_name: str):
-        self.set_status(f"Branch selecionada: {branch_name}")
-
-        current_branches = self.left_sidebar.all_branches[:] if self.left_sidebar.all_branches else [branch_name]
-
-        if branch_name not in current_branches:
-            current_branches.insert(0, branch_name)
-
-        self.top_bar.set_branches(current_branches, current_branch=branch_name)
-        self.top_bar.set_selected_branch(branch_name)
-
-        self.center_panel.set_commits([
-            f"Branch atual: {branch_name}",
-            f"Commit recente da branch {branch_name}",
-            "Atualização de interface",
-            "Refatoração da topbar",
-        ])
-
-        self.right_panel.set_files([
-            "ui/left_sidebar.py",
-            "ui/main_window.py",
-            "ui/top_bar.py",
-        ])
+        self.perform_branch_checkout(branch_name)
 
     def handle_top_branch_changed(self, branch_name: str):
-        self.left_sidebar.set_selected_branch(branch_name)
-        self.set_status(f"Branch selecionada no topo: {branch_name}")
-
-        self.center_panel.set_commits([
-            f"Branch atual: {branch_name}",
-            f"Commit recente da branch {branch_name}",
-            "Atualização pelo seletor do topo",
-            "Refatoração da interface",
-        ])
-
-        self.right_panel.set_files([
-            "ui/top_bar.py",
-            "ui/left_sidebar.py",
-            "ui/main_window.py",
-        ])
+        if self.is_updating_branch_ui:
+            return
+        self.perform_branch_checkout(branch_name)

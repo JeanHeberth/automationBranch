@@ -6,30 +6,68 @@ class CenterPanel(ctk.CTkFrame):
     def __init__(self, master):
         super().__init__(
             master,
-            fg_color=APP_COLORS["bg"],
+            fg_color=APP_COLORS["panel"],
             corner_radius=0
         )
 
-        ctk.CTkLabel(
-            self,
+        self._build_header()
+        self._build_list()
+
+    def _build_header(self):
+        header = ctk.CTkFrame(self, fg_color="transparent", height=48)
+        header.pack(fill="x", padx=10, pady=(8, 4))
+
+        self.title = ctk.CTkLabel(
+            header,
             text="Commits",
-            font=ctk.CTkFont(size=18, weight="bold")
-        ).pack(anchor="w", padx=16, pady=(16, 8))
+            text_color=APP_COLORS["text"],
+            font=ctk.CTkFont(size=16, weight="bold")
+        )
+        self.title.pack(side="left")
 
-        self.commits = ctk.CTkTextbox(self, corner_radius=8)
-        self.commits.pack(fill="both", expand=True, padx=16, pady=(0, 16))
+    def _build_list(self):
+        self.scroll = ctk.CTkScrollableFrame(
+            self,
+            fg_color="transparent"
+        )
+        self.scroll.pack(fill="both", expand=True, padx=6, pady=6)
 
-        self.set_commits([
-            "// WIP",
-            "Merge pull request #41 alterando-arquivo",
-            "Criado arquivo .yml",
-            "Merge pull request #40 criando-sse",
-            "criado um server.address",
-            "Merge pull request #39 CAE-36",
-        ])
+    def clear(self):
+        for widget in self.scroll.winfo_children():
+            widget.destroy()
 
     def set_commits(self, commits: list[str]):
-        self.commits.configure(state="normal")
-        self.commits.delete("1.0", "end")
-        self.commits.insert("1.0", "\n".join(commits))
-        self.commits.configure(state="disabled")
+        self.clear()
+
+        if not commits:
+            self._empty_state("Nenhum commit encontrado.")
+            return
+
+        for commit in commits:
+            self._create_commit_item(commit)
+
+    def _create_commit_item(self, text: str):
+        item = ctk.CTkFrame(
+            self.scroll,
+            fg_color="#2a2f3a",
+            corner_radius=8,
+            height=48
+        )
+        item.pack(fill="x", padx=6, pady=4)
+
+        label = ctk.CTkLabel(
+            item,
+            text=text,
+            text_color=APP_COLORS["text"],
+            anchor="w",
+            justify="left",
+            wraplength=500
+        )
+        label.pack(fill="x", padx=10, pady=10)
+
+    def _empty_state(self, text: str):
+        ctk.CTkLabel(
+            self.scroll,
+            text=text,
+            text_color=APP_COLORS["muted"]
+        ).pack(pady=20)
