@@ -41,9 +41,11 @@ from services.sync_service import (
 )
 from services.auth_service import (
     get_current_session,
-    login_with_provider,
+    login_with_github,
+    login_with_google,
     logout,
 )
+
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
@@ -168,14 +170,23 @@ class MainWindow(ctk.CTk):
         )
 
     def _connect_github(self):
-        session = login_with_provider("github")
-        self._refresh_profile_ui()
-        self.set_status(f"Conta conectada com sucesso via {session['provider']}.")
+        try:
+            session = login_with_github()
+            self._refresh_profile_ui()
+            self.set_status(f"Conta conectada com sucesso via {session['provider']}.")
+        except Exception as exc:
+            messagebox.showerror("Erro no login GitHub", str(exc))
+            self.set_status("Falha ao conectar conta GitHub.")
 
     def _connect_google(self):
-        session = login_with_provider("google")
-        self._refresh_profile_ui()
-        self.set_status(f"Conta conectada com sucesso via {session['provider']}.")
+        try:
+            login_with_google()
+        except NotImplementedError as exc:
+            messagebox.showinfo("Google em breve", str(exc))
+            self.set_status("Login com Google ainda não implementado.")
+        except Exception as exc:
+            messagebox.showerror("Erro no login Google", str(exc))
+            self.set_status("Falha ao conectar conta Google.")
 
     def _logout_profile(self):
         logout()
