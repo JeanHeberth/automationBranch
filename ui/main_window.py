@@ -55,7 +55,6 @@ from services.auth_service import (
     logout,
 )
 
-
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
@@ -117,11 +116,8 @@ class MainWindow(ctk.CTk):
         screen_width = self.winfo_screenwidth()
         screen_height = self.winfo_screenheight()
 
-        width = int(screen_width * 0.96)
+        width = int(screen_width * 0.985)
         height = int(screen_height * 0.92)
-
-        if screen_width < 1400:
-            width = int(screen_width * 0.985)
 
         min_width = 980
         min_height = 620
@@ -140,10 +136,9 @@ class MainWindow(ctk.CTk):
         self.grid_rowconfigure(1, weight=1)
         self.grid_rowconfigure(2, weight=0)
 
-        # Laterais menores; centro dominante
-        self.grid_columnconfigure(0, weight=0, minsize=230)
+        self.grid_columnconfigure(0, weight=0, minsize=205)
         self.grid_columnconfigure(1, weight=1)
-        self.grid_columnconfigure(2, weight=0, minsize=300)
+        self.grid_columnconfigure(2, weight=0, minsize=250)
 
     def _load_initial_data(self):
         self.top_bar.set_branches([], current_branch="")
@@ -675,7 +670,7 @@ class MainWindow(ctk.CTk):
             elif action_name == "Redo":
                 messagebox.showinfo("Redo", "Função de refazer ainda será implementada.")
             elif action_name == "Actions":
-                messagebox.showinfo("Actions", "Menu de ações extras ainda será implementada.")
+                messagebox.showinfo("Actions", "Menu de ações extras ainda será implementado.")
             elif action_name == "Search":
                 messagebox.showinfo("Search", "Busca ainda será implementada.")
 
