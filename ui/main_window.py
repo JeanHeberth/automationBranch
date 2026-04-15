@@ -9,6 +9,7 @@ from ui.center_panel import CenterPanel
 from ui.right_panel import RightPanel
 from ui.profile_popup import ProfileConnectPopup
 from ui.profile_menu import ProfileMenu
+from ui.delete_branch_popup import DeleteBranchPopup
 from ui.theme import APP_COLORS
 
 from services.git_runner import GitServiceError
@@ -20,6 +21,14 @@ from services.branch_service import (
     get_current_branch,
     checkout_branch,
     create_branch,
+)
+from services.branch_delete_service import (
+    get_deletable_local_branches,
+    get_deletable_remote_branches,
+    delete_local_branch,
+    delete_remote_branch,
+    delete_all_local,
+    delete_all_remote,
 )
 from services.commit_service import (
     get_recent_commit_rows,
@@ -192,6 +201,71 @@ class MainWindow(ctk.CTk):
         logout()
         self._refresh_profile_ui()
         self.set_status("Conta desconectada com sucesso.")
+
+    def _open_delete_branch_popup(self):
+        if not self.selected_repo_path:
+            messagebox.showwarning(
+                "Repositório não selecionado",
+                "Selecione um repositório antes de deletar branches."
+            )
+            return
+
+        try:
+            local_branches = get_deletable_local_branches(self.selected_repo_path)
+            remote_branches = get_deletable_remote_branches(self.selected_repo_path)
+
+            DeleteBranchPopup(
+                self,
+                local_branches=local_branches,
+                remote_branches=remote_branches,
+                on_confirm=self._execute_delete_branch
+            )
+        except Exception as exc:
+            messagebox.showerror("Erro ao abrir popup", str(exc))
+
+    def _execute_delete_branch(self, mode: str, location: str, branch_name: str):
+        if not self.selected_repo_path:
+            messagebox.showwarning(
+                "Repositório não selecionado",
+                "Selecione um repositório antes de deletar branches."
+            )
+            return
+
+        try:
+            if mode == "specific":
+                if not branch_name or branch_name == "Nenhuma branch disponível":
+                    raise GitServiceError("Selecione uma branch válida.")
+
+                if location == "local":
+                    result = delete_local_branch(self.selected_repo_path, branch_name)
+                    self.set_status(f"Branch local deletada: {branch_name}")
+                    messagebox.showinfo("Sucesso", result or f"Branch local '{branch_name}' deletada com sucesso.")
+                else:
+                    result = delete_remote_branch(self.selected_repo_path, branch_name)
+                    self.set_status(f"Branch remota deletada: {branch_name}")
+                    messagebox.showinfo("Sucesso", result or f"Branch remota '{branch_name}' deletada com sucesso.")
+            else:
+                if location == "local":
+                    results = delete_all_local(self.selected_repo_path)
+                    self.set_status("Branches locais deletadas com sucesso.")
+                    messagebox.showinfo(
+                        "Sucesso",
+                        "\n".join(results) if results else "Nenhuma branch local disponível para deleção."
+                    )
+                else:
+                    results = delete_all_remote(self.selected_repo_path)
+                    self.set_status("Branches remotas deletadas com sucesso.")
+                    messagebox.showinfo(
+                        "Sucesso",
+                        "\n".join(results) if results else "Nenhuma branch remota disponível para deleção."
+                    )
+
+            current_branch = get_current_branch(self.selected_repo_path)
+            self.sync_branch_ui(current_branch)
+
+        except Exception as exc:
+            messagebox.showerror("Erro ao deletar branch", str(exc))
+            self.set_status("Falha ao deletar branch.")
 
     def set_status(self, text: str):
         self.status_label.configure(text=text)
@@ -521,11 +595,15 @@ class MainWindow(ctk.CTk):
             self._handle_merge_pr()
             return
 
+        if action_name == "Delete Branch":
+            self._open_delete_branch_popup()
+            return
+
         if action_name == "Profile":
             self._open_profile_menu()
             return
 
-        if not self.selected_repo_path and action_name in {"Pull", "Push", "Branch", "Stash", "Pop", "Refresh"}:
+        if not self.selected_repo_path and action_name in {"Pull", "Push", "Branch", "Stash", "Pop", "Refresh", "Delete Branch"}:
             messagebox.showwarning(
                 "Repositório não selecionado",
                 "Selecione um repositório antes de executar ações Git."

@@ -24,7 +24,7 @@ class TopBar(ctk.CTkFrame):
         self._responsive_job = None
 
         self.grid_columnconfigure(0, weight=3)
-        self.grid_columnconfigure(1, weight=8)
+        self.grid_columnconfigure(1, weight=7)
         self.grid_columnconfigure(2, weight=2)
 
         self._build_left_section()
@@ -32,11 +32,11 @@ class TopBar(ctk.CTkFrame):
         self._build_right_section()
 
         self.bind("<Configure>", self._schedule_responsive_update)
-        self.after(150, self._apply_responsive_layout)
+        self.after(120, self._apply_responsive_layout)
 
     def _build_left_section(self):
         frame = ctk.CTkFrame(self, fg_color="transparent")
-        frame.grid(row=0, column=0, sticky="w", padx=12, pady=6)
+        frame.grid(row=0, column=0, sticky="w", padx=10, pady=6)
 
         ctk.CTkLabel(
             frame,
@@ -49,7 +49,7 @@ class TopBar(ctk.CTkFrame):
             frame,
             values=["Selecione um repositório"],
             variable=self.repo_var,
-            width=190,
+            width=170,
             height=32,
             fg_color="#202631",
             button_color="#596273",
@@ -67,7 +67,7 @@ class TopBar(ctk.CTkFrame):
             command=self.on_select_repo,
             width=86
         )
-        self.open_repo_btn.grid(row=1, column=1, padx=(0, 12), pady=(4, 0))
+        self.open_repo_btn.grid(row=1, column=1, padx=(0, 10), pady=(4, 0))
 
         ctk.CTkLabel(
             frame,
@@ -76,11 +76,14 @@ class TopBar(ctk.CTkFrame):
             font=ctk.CTkFont(size=11)
         ).grid(row=0, column=2, sticky="w", padx=(0, 6))
 
+        branch_group = ctk.CTkFrame(frame, fg_color="transparent")
+        branch_group.grid(row=1, column=2, sticky="w", pady=(4, 0))
+
         self.branch_menu = ctk.CTkOptionMenu(
-            frame,
+            branch_group,
             values=["Nenhuma branch"],
             variable=self.branch_var,
-            width=170,
+            width=160,
             height=32,
             fg_color="#202631",
             button_color="#596273",
@@ -91,22 +94,22 @@ class TopBar(ctk.CTkFrame):
             command=self._handle_branch_menu_change,
             state="disabled"
         )
-        self.branch_menu.grid(row=1, column=2, padx=(0, 8), pady=(4, 0))
+        self.branch_menu.pack(side="left", padx=(0, 6))
 
         self.refresh_btn = self._create_icon_button(
-            frame,
+            branch_group,
             icon_name="refresh.png",
             command=lambda: self.on_action("Refresh")
         )
-        self.refresh_btn.grid(row=1, column=3, padx=(0, 0), pady=(4, 0))
+        self.refresh_btn.pack(side="left")
 
     def _build_center_section(self):
         self.center_wrapper = ctk.CTkFrame(self, fg_color="transparent")
-        self.center_wrapper.grid(row=0, column=1, sticky="nsew", padx=10, pady=6)
+        self.center_wrapper.grid(row=0, column=1, sticky="nsew", padx=8, pady=6)
 
         self.toolbar_groups = [
             [("Undo", "undo.png"), ("Redo", "redo.png")],
-            [("Pull", "pull.png"), ("Push", "push.png"), ("Branch", "branch.png"), ("Stash", "stash.png"), ("Pop", "pop.png")],
+            [("Pull", "pull.png"), ("Push", "push.png"), ("Branch", "branch.png"), ("Delete Branch", "actions.png"), ("Stash", "stash.png"), ("Pop", "pop.png")],
             [("Open PR", "actions.png"), ("Merge PR", "actions.png"), ("Terminal", "terminal.png")],
         ]
 
@@ -136,72 +139,72 @@ class TopBar(ctk.CTkFrame):
                     command=lambda action=label: self.on_action(action),
                     width=self._get_toolbar_button_width(label)
                 )
-                button.grid(row=0, column=index, padx=3, pady=0)
+                button.grid(row=0, column=index, padx=2, pady=0)
 
             if group_index < len(visible_groups) - 1:
                 sep = ctk.CTkFrame(
                     self.center_wrapper,
                     fg_color="#4b5363",
                     width=1,
-                    height=28
+                    height=24
                 )
-                sep.grid(row=0, column=(group_index * 2) + 1, padx=10, pady=4, sticky="ns")
+                sep.grid(row=0, column=(group_index * 2) + 1, padx=8, pady=6, sticky="ns")
 
     def _get_toolbar_button_width(self, label: str) -> int:
         if label in {"Undo", "Redo"}:
-            return 78
-        if label in {"Open PR", "Merge PR"}:
-            return 102
+            return 72
+        if label in {"Open PR", "Merge PR", "Delete Branch"}:
+            return 108
         if label == "Terminal":
-            return 90
-        return 84
+            return 82
+        return 78
 
     def _get_visible_center_actions(self) -> list[str]:
         width = max(self.winfo_width(), 1)
 
         all_actions = [
             "Undo", "Redo",
-            "Pull", "Push", "Branch", "Stash", "Pop",
+            "Pull", "Push", "Branch", "Delete Branch", "Stash", "Pop",
             "Open PR", "Merge PR", "Terminal"
         ]
 
-        if width >= 1600:
+        if width >= 1580:
             self.hidden_actions = []
             return all_actions
 
-        if width >= 1480:
+        if width >= 1450:
             self.hidden_actions = ["Terminal"]
             return [a for a in all_actions if a not in self.hidden_actions]
 
-        if width >= 1380:
+        if width >= 1340:
             self.hidden_actions = ["Open PR", "Merge PR", "Terminal"]
             return [a for a in all_actions if a not in self.hidden_actions]
 
-        if width >= 1280:
+        if width >= 1240:
             self.hidden_actions = ["Pop", "Open PR", "Merge PR", "Terminal"]
             return [a for a in all_actions if a not in self.hidden_actions]
 
-        if width >= 1180:
+        if width >= 1160:
             self.hidden_actions = ["Stash", "Pop", "Open PR", "Merge PR", "Terminal"]
             return [a for a in all_actions if a not in self.hidden_actions]
 
-        if width >= 1100:
-            self.hidden_actions = ["Branch", "Stash", "Pop", "Open PR", "Merge PR", "Terminal"]
+        if width >= 1080:
+            self.hidden_actions = ["Delete Branch", "Branch", "Stash", "Pop", "Open PR", "Merge PR", "Terminal"]
             return [a for a in all_actions if a not in self.hidden_actions]
 
-        self.hidden_actions = ["Push", "Branch", "Stash", "Pop", "Open PR", "Merge PR", "Terminal"]
+        self.hidden_actions = ["Push", "Delete Branch", "Branch", "Stash", "Pop", "Open PR", "Merge PR", "Terminal"]
         return [a for a in all_actions if a not in self.hidden_actions]
 
     def _build_right_section(self):
         self.right_wrapper = ctk.CTkFrame(self, fg_color="transparent")
-        self.right_wrapper.grid(row=0, column=2, sticky="e", padx=12, pady=6)
+        self.right_wrapper.grid(row=0, column=2, sticky="e", padx=10, pady=6)
 
         self.actions_btn = self._create_secondary_button(
             self.right_wrapper,
             text="Actions",
             icon_name="actions.png",
             command=self._toggle_actions_popup,
-            width=106
+            width=110
         )
         self.actions_btn.grid(row=0, column=0, padx=4, pady=0)
 
@@ -210,7 +213,7 @@ class TopBar(ctk.CTkFrame):
             text="Search",
             icon_name="search.png",
             command=lambda: self.on_action("Search"),
-            width=88
+            width=86
         )
         self.search_btn.grid(row=0, column=1, padx=4, pady=0)
 
@@ -219,7 +222,7 @@ class TopBar(ctk.CTkFrame):
             text="Profile",
             icon_name="profile.png",
             command=lambda: self.on_action("Profile"),
-            width=96
+            width=92
         )
         self.profile_btn.grid(row=0, column=2, padx=4, pady=0)
 
@@ -283,11 +286,6 @@ class TopBar(ctk.CTkFrame):
 
     def _handle_popup_action(self, action_name: str):
         self._close_actions_popup()
-
-        if action_name in {"Search", "Profile", "Actions"}:
-            self.on_action(action_name)
-            return
-
         self.on_action(action_name)
 
     def _close_actions_popup(self):
@@ -306,30 +304,30 @@ class TopBar(ctk.CTkFrame):
         self._render_center_toolbar()
         self._update_actions_button_label()
 
-    def _create_toolbar_button(self, master, text, icon_name, command, width=92):
+    def _create_toolbar_button(self, master, text, icon_name, command, width=80):
         return ctk.CTkButton(
             master,
             text=text,
-            image=load_icon(icon_name, size=(30, 30)),
+            image=load_icon(icon_name, size=(40, 40)),
             compound="left",
             anchor="center",
             width=width,
-            height=38,
+            height=36,
             command=command,
             fg_color="transparent",
             hover_color="#4b5563",
             text_color=APP_COLORS["text"],
             corner_radius=8,
             border_width=0,
-            border_spacing=6,
-            font=ctk.CTkFont(size=12, weight="bold")
+            border_spacing=4,
+            font=ctk.CTkFont(size=11, weight="bold")
         )
 
-    def _create_secondary_button(self, master, text, icon_name, command, width=92):
+    def _create_secondary_button(self, master, text, icon_name, command, width=90):
         return ctk.CTkButton(
             master,
             text=text,
-            image=load_icon(icon_name, size=(17, 17)),
+            image=load_icon(icon_name, size=(16, 16)),
             compound="left",
             anchor="center",
             width=width,
@@ -347,12 +345,12 @@ class TopBar(ctk.CTkFrame):
         return ctk.CTkButton(
             master,
             text="",
-            image=load_icon(icon_name, size=(22, 22)),
+            image=load_icon(icon_name, size=(18, 18)),
             width=32,
             height=32,
             command=command,
             fg_color="#3b414d",
-            hover_color="#2563EB",
+            hover_color="#1591EA",
             corner_radius=8,
             border_width=0
         )
