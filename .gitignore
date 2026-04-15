@@ -38,7 +38,7 @@ Thumbs.db
 # Env Variables
 # ========================
 .env
-
+.session.json
 # ========================
 # Build / Dist
 # ========================

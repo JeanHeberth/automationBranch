@@ -6,6 +6,7 @@ import requests
 
 from services.branch_service import get_origin_remote_url, get_current_branch
 from services.git_runner import GitServiceError
+from services.session_service import load_session
 
 
 def _parse_github_repo(origin_url: str) -> tuple[str | None, str | None]:
@@ -41,13 +42,20 @@ def _get_repo_info(repo_path: str) -> tuple[str, str]:
     return owner, repo
 
 
-def _get_headers(require_token: bool = False) -> dict:
-    token = os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN")
+def _resolve_access_token(require_token: bool = False) -> str | None:
+    session = load_session()
+    token = session.get("access_token") or os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN")
 
     if require_token and not token:
         raise GitServiceError(
-            "GITHUB_TOKEN/GH_TOKEN não configurado. Defina um token para criar ou mergear Pull Requests."
+            "Nenhum token GitHub encontrado. Faça login pelo Profile ou configure GITHUB_TOKEN/GH_TOKEN."
         )
+
+    return token
+
+
+def _get_headers(require_token: bool = False) -> dict:
+    token = _resolve_access_token(require_token=require_token)
 
     headers = {
         "Accept": "application/vnd.github+json"
