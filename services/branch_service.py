@@ -81,3 +81,4 @@ def has_upstream(repo_path: str, branch_name: str) -> bool:
         return bool(output.strip())
     except GitServiceError:
         return False
+
