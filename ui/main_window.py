@@ -106,7 +106,7 @@ class MainWindow(ctk.CTk):
             fg_color=APP_COLORS["topbar"],
             text_color=APP_COLORS["text"],
             corner_radius=0,
-            height=32
+            height=28
         )
         self.status_label.grid(row=2, column=0, columnspan=3, sticky="ew")
 
@@ -117,17 +117,20 @@ class MainWindow(ctk.CTk):
         screen_width = self.winfo_screenwidth()
         screen_height = self.winfo_screenheight()
 
-        width = int(screen_width * 0.92)
-        height = int(screen_height * 0.88)
+        width = int(screen_width * 0.96)
+        height = int(screen_height * 0.92)
 
-        min_width = 1100
-        min_height = 680
+        if screen_width < 1400:
+            width = int(screen_width * 0.985)
+
+        min_width = 980
+        min_height = 620
 
         width = max(width, min_width)
         height = max(height, min_height)
 
-        x = (screen_width - width) // 2
-        y = (screen_height - height) // 2
+        x = max((screen_width - width) // 2, 0)
+        y = max((screen_height - height) // 2, 0)
 
         self.geometry(f"{width}x{height}+{x}+{y}")
         self.minsize(min_width, min_height)
@@ -137,9 +140,10 @@ class MainWindow(ctk.CTk):
         self.grid_rowconfigure(1, weight=1)
         self.grid_rowconfigure(2, weight=0)
 
-        self.grid_columnconfigure(0, weight=0, minsize=280)
+        # Laterais menores; centro dominante
+        self.grid_columnconfigure(0, weight=0, minsize=230)
         self.grid_columnconfigure(1, weight=1)
-        self.grid_columnconfigure(2, weight=0, minsize=340)
+        self.grid_columnconfigure(2, weight=0, minsize=300)
 
     def _load_initial_data(self):
         self.top_bar.set_branches([], current_branch="")
@@ -229,7 +233,7 @@ class MainWindow(ctk.CTk):
                 "Repositório não selecionado",
                 "Selecione um repositório antes de deletar branches."
             )
-            return
+            return False
 
         try:
             if mode == "specific":
@@ -238,34 +242,42 @@ class MainWindow(ctk.CTk):
 
                 if location == "local":
                     result = delete_local_branch(self.selected_repo_path, branch_name)
-                    self.set_status(f"Branch local deletada: {branch_name}")
-                    messagebox.showinfo("Sucesso", result or f"Branch local '{branch_name}' deletada com sucesso.")
+                    messagebox.showinfo(
+                        "Branch deletada",
+                        result or f"Branch local '{branch_name}' deletada com sucesso."
+                    )
+                    self.set_status(f"Branch local deletada com sucesso: {branch_name}")
                 else:
                     result = delete_remote_branch(self.selected_repo_path, branch_name)
-                    self.set_status(f"Branch remota deletada: {branch_name}")
-                    messagebox.showinfo("Sucesso", result or f"Branch remota '{branch_name}' deletada com sucesso.")
+                    messagebox.showinfo(
+                        "Branch deletada",
+                        result or f"Branch remota '{branch_name}' deletada com sucesso."
+                    )
+                    self.set_status(f"Branch remota deletada com sucesso: {branch_name}")
             else:
                 if location == "local":
                     results = delete_all_local(self.selected_repo_path)
-                    self.set_status("Branches locais deletadas com sucesso.")
                     messagebox.showinfo(
-                        "Sucesso",
+                        "Branches deletadas",
                         "\n".join(results) if results else "Nenhuma branch local disponível para deleção."
                     )
+                    self.set_status("Deleção em massa local concluída com sucesso.")
                 else:
                     results = delete_all_remote(self.selected_repo_path)
-                    self.set_status("Branches remotas deletadas com sucesso.")
                     messagebox.showinfo(
-                        "Sucesso",
+                        "Branches deletadas",
                         "\n".join(results) if results else "Nenhuma branch remota disponível para deleção."
                     )
+                    self.set_status("Deleção em massa remota concluída com sucesso.")
 
             current_branch = get_current_branch(self.selected_repo_path)
             self.sync_branch_ui(current_branch)
+            return True
 
         except Exception as exc:
             messagebox.showerror("Erro ao deletar branch", str(exc))
             self.set_status("Falha ao deletar branch.")
+            return False
 
     def set_status(self, text: str):
         self.status_label.configure(text=text)
@@ -663,7 +675,7 @@ class MainWindow(ctk.CTk):
             elif action_name == "Redo":
                 messagebox.showinfo("Redo", "Função de refazer ainda será implementada.")
             elif action_name == "Actions":
-                messagebox.showinfo("Actions", "Menu de ações extras ainda será implementado.")
+                messagebox.showinfo("Actions", "Menu de ações extras ainda será implementada.")
             elif action_name == "Search":
                 messagebox.showinfo("Search", "Busca ainda será implementada.")
 

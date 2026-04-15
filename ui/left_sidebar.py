@@ -9,17 +9,17 @@ class SidebarSection(ctk.CTkFrame):
         self.expanded = expanded
         self.fonts = fonts or {}
 
-        self.header = ctk.CTkFrame(self, fg_color="transparent", height=34)
-        self.header.pack(fill="x", padx=0, pady=(0, 4))
+        self.header = ctk.CTkFrame(self, fg_color="transparent", height=30)
+        self.header.pack(fill="x", padx=0, pady=(0, 3))
 
         self.arrow_label = ctk.CTkLabel(
             self.header,
             text="⌄" if expanded else "›",
             text_color=APP_COLORS["muted"],
-            font=ctk.CTkFont(size=16, weight="bold"),
-            width=18
+            font=ctk.CTkFont(size=14, weight="bold"),
+            width=16
         )
-        self.arrow_label.pack(side="left", padx=(2, 6))
+        self.arrow_label.pack(side="left", padx=(1, 5))
 
         self.title_label = ctk.CTkLabel(
             self.header,
@@ -35,11 +35,11 @@ class SidebarSection(ctk.CTkFrame):
             text_color="#9bb1ff",
             font=self.fonts.get("section")
         )
-        self.count_label.pack(side="right", padx=(6, 4))
+        self.count_label.pack(side="right", padx=(5, 3))
 
         self.content = ctk.CTkFrame(self, fg_color="transparent")
         if expanded:
-            self.content.pack(fill="x", padx=0, pady=(0, 8))
+            self.content.pack(fill="x", padx=0, pady=(0, 6))
 
         for widget in [self.header, self.arrow_label, self.title_label, self.count_label]:
             widget.bind("<Button-1>", self.toggle)
@@ -49,7 +49,7 @@ class SidebarSection(ctk.CTkFrame):
         self.arrow_label.configure(text="⌄" if self.expanded else "›")
 
         if self.expanded:
-            self.content.pack(fill="x", padx=0, pady=(0, 8))
+            self.content.pack(fill="x", padx=0, pady=(0, 6))
         else:
             self.content.pack_forget()
 
@@ -75,22 +75,22 @@ class SidebarItem(ctk.CTkFrame):
             master,
             fg_color="#3c5f3e" if selected else "transparent",
             corner_radius=0,
-            height=38
+            height=32
         )
 
         self.inner = ctk.CTkFrame(self, fg_color="transparent")
         self.inner.pack(fill="both", expand=True)
 
-        pad_left = 14 + (level * 22)
+        pad_left = 10 + (level * 18)
 
         self.icon_label = ctk.CTkLabel(
             self.inner,
             text=icon,
             text_color="#d8dde6" if selected else APP_COLORS["muted"],
-            font=ctk.CTkFont(size=14),
-            width=24
+            font=ctk.CTkFont(size=12),
+            width=18
         )
-        self.icon_label.pack(side="left", padx=(pad_left, 8))
+        self.icon_label.pack(side="left", padx=(pad_left, 6))
 
         self.text_label = ctk.CTkLabel(
             self.inner,
@@ -126,7 +126,7 @@ class LeftSidebar(ctk.CTkFrame):
             master,
             fg_color=APP_COLORS["sidebar"],
             corner_radius=0,
-            width=280
+            width=230
         )
 
         self.pack_propagate(False)
@@ -152,28 +152,28 @@ class LeftSidebar(ctk.CTkFrame):
 
     def _create_fonts(self):
         return {
-            "title": ctk.CTkFont(family="Helvetica Neue", size=15, weight="bold"),
-            "section": ctk.CTkFont(family="Helvetica Neue", size=13, weight="bold"),
-            "item": ctk.CTkFont(family="Helvetica Neue", size=13),
-            "item_selected": ctk.CTkFont(family="Helvetica Neue", size=13, weight="bold"),
-            "footer": ctk.CTkFont(family="Helvetica Neue", size=12),
-            "search": ctk.CTkFont(family="Helvetica Neue", size=13),
-            "pr": ctk.CTkFont(family="Helvetica Neue", size=12),
+            "title": ctk.CTkFont(family="Helvetica Neue", size=14, weight="bold"),
+            "section": ctk.CTkFont(family="Helvetica Neue", size=12, weight="bold"),
+            "item": ctk.CTkFont(family="Helvetica Neue", size=12),
+            "item_selected": ctk.CTkFont(family="Helvetica Neue", size=12, weight="bold"),
+            "footer": ctk.CTkFont(family="Helvetica Neue", size=11),
+            "search": ctk.CTkFont(family="Helvetica Neue", size=12),
+            "pr": ctk.CTkFont(family="Helvetica Neue", size=11),
         }
 
     def _build_header(self):
-        header = ctk.CTkFrame(self, fg_color="transparent", height=96)
-        header.pack(fill="x", padx=12, pady=(10, 8))
+        header = ctk.CTkFrame(self, fg_color="transparent", height=82)
+        header.pack(fill="x", padx=10, pady=(8, 6))
 
         top_line = ctk.CTkFrame(header, fg_color="transparent")
-        top_line.pack(fill="x", pady=(0, 10))
+        top_line.pack(fill="x", pady=(0, 8))
 
         ctk.CTkLabel(
             top_line,
             text="◀",
             text_color=APP_COLORS["text"],
-            font=ctk.CTkFont(size=16, weight="bold"),
-            width=24
+            font=ctk.CTkFont(size=14, weight="bold"),
+            width=20
         ).pack(side="left", padx=(0, 4))
 
         self.viewing_label = ctk.CTkLabel(
@@ -190,7 +190,7 @@ class LeftSidebar(ctk.CTkFrame):
         self.search_entry = ctk.CTkEntry(
             search_row,
             placeholder_text="Filter (⌘ + Option + f)",
-            height=36,
+            height=34,
             corner_radius=8,
             fg_color="#1b1f27",
             border_color=APP_COLORS["border"],
@@ -203,17 +203,17 @@ class LeftSidebar(ctk.CTkFrame):
         self.search_btn = ctk.CTkButton(
             search_row,
             text="⌕",
-            width=36,
-            height=36,
+            width=30,
+            height=34,
             fg_color="transparent",
             hover_color="#323846",
             text_color=APP_COLORS["muted"],
-            font=ctk.CTkFont(size=16)
+            font=ctk.CTkFont(size=14)
         )
-        self.search_btn.pack(side="left", padx=(6, 0))
+        self.search_btn.pack(side="left", padx=(4, 0))
 
         divider = ctk.CTkFrame(self, fg_color=APP_COLORS["border"], height=1)
-        divider.pack(fill="x", padx=0, pady=(0, 4))
+        divider.pack(fill="x", padx=0, pady=(0, 3))
 
     def _build_scroll_area(self):
         self.scroll = ctk.CTkScrollableFrame(
@@ -227,15 +227,15 @@ class LeftSidebar(ctk.CTkFrame):
         divider = ctk.CTkFrame(self, fg_color=APP_COLORS["border"], height=1)
         divider.pack(fill="x", padx=0, pady=(0, 0))
 
-        footer = ctk.CTkFrame(self, fg_color="transparent", height=48)
-        footer.pack(fill="x", padx=8, pady=(6, 10))
+        footer = ctk.CTkFrame(self, fg_color="transparent", height=40)
+        footer.pack(fill="x", padx=8, pady=(4, 8))
 
         ctk.CTkLabel(
             footer,
             text="🚀",
             text_color="#6ee7a8",
-            font=ctk.CTkFont(size=16)
-        ).pack(side="left", padx=(6, 8))
+            font=ctk.CTkFont(size=14)
+        ).pack(side="left", padx=(4, 6))
 
         self.footer_label = ctk.CTkLabel(
             footer,
@@ -256,11 +256,11 @@ class LeftSidebar(ctk.CTkFrame):
             self.scroll,
             fg_color=APP_COLORS["border"],
             height=1
-        ).pack(fill="x", padx=0, pady=(0, 10))
+        ).pack(fill="x", padx=0, pady=(0, 8))
 
     def _render_local_section(self, branches: list[str]):
         local = SidebarSection(self.scroll, "LOCAL", str(len(branches)), expanded=True, fonts=self.fonts)
-        local.pack(fill="x", padx=0, pady=(4, 10))
+        local.pack(fill="x", padx=0, pady=(3, 8))
 
         if not branches:
             ctk.CTkLabel(
@@ -268,7 +268,7 @@ class LeftSidebar(ctk.CTkFrame):
                 text="Nenhuma branch local",
                 text_color=APP_COLORS["muted"],
                 font=self.fonts["item"]
-            ).pack(anchor="w", padx=16, pady=(2, 8))
+            ).pack(anchor="w", padx=14, pady=(2, 6))
             return
 
         for branch in branches:
@@ -286,7 +286,7 @@ class LeftSidebar(ctk.CTkFrame):
 
     def _render_remote_section(self, remote_branches: list[str], remotes: list[str]):
         remote = SidebarSection(self.scroll, "REMOTE", str(len(remotes)), expanded=True, fonts=self.fonts)
-        remote.pack(fill="x", padx=0, pady=(0, 10))
+        remote.pack(fill="x", padx=0, pady=(0, 8))
 
         if not remotes:
             ctk.CTkLabel(
@@ -294,7 +294,7 @@ class LeftSidebar(ctk.CTkFrame):
                 text="Nenhum remote",
                 text_color=APP_COLORS["muted"],
                 font=self.fonts["item"]
-            ).pack(anchor="w", padx=16, pady=(2, 8))
+            ).pack(anchor="w", padx=14, pady=(2, 6))
             return
 
         for remote_name in remotes:
@@ -318,7 +318,7 @@ class LeftSidebar(ctk.CTkFrame):
                     text="Nenhuma branch remota",
                     text_color=APP_COLORS["muted"],
                     font=self.fonts["item"]
-                ).pack(anchor="w", padx=38, pady=(2, 8))
+                ).pack(anchor="w", padx=30, pady=(2, 6))
                 continue
 
             for branch_name in related:
@@ -338,7 +338,7 @@ class LeftSidebar(ctk.CTkFrame):
             expanded=True if self.pull_requests else False,
             fonts=self.fonts
         )
-        prs.pack(fill="x", padx=0, pady=(0, 6))
+        prs.pack(fill="x", padx=0, pady=(0, 5))
 
         if not self.pull_requests:
             ctk.CTkLabel(
@@ -346,7 +346,7 @@ class LeftSidebar(ctk.CTkFrame):
                 text="Nenhum PR aberto",
                 text_color=APP_COLORS["muted"],
                 font=self.fonts["pr"]
-            ).pack(anchor="w", padx=16, pady=(2, 8))
+            ).pack(anchor="w", padx=14, pady=(2, 6))
             return
 
         for pr in self.pull_requests:
@@ -355,7 +355,7 @@ class LeftSidebar(ctk.CTkFrame):
             base = pr.get("base", "")
 
             item = ctk.CTkFrame(prs.content, fg_color="#2a2f3a", corner_radius=8)
-            item.pack(fill="x", padx=8, pady=4)
+            item.pack(fill="x", padx=6, pady=3)
 
             ctk.CTkLabel(
                 item,
@@ -364,44 +364,44 @@ class LeftSidebar(ctk.CTkFrame):
                 font=self.fonts["pr"],
                 anchor="w",
                 justify="left",
-                wraplength=220
-            ).pack(fill="x", padx=10, pady=(8, 2))
+                wraplength=180
+            ).pack(fill="x", padx=8, pady=(6, 2))
 
             ctk.CTkLabel(
                 item,
                 text=f"{head} → {base}",
                 text_color=APP_COLORS["muted"],
-                font=ctk.CTkFont(size=11),
+                font=ctk.CTkFont(size=10),
                 anchor="w"
-            ).pack(fill="x", padx=10, pady=(0, 6))
+            ).pack(fill="x", padx=8, pady=(0, 5))
 
             actions_row = ctk.CTkFrame(item, fg_color="transparent")
-            actions_row.pack(fill="x", padx=8, pady=(0, 8))
+            actions_row.pack(fill="x", padx=6, pady=(0, 6))
 
             open_btn = ctk.CTkButton(
                 actions_row,
                 text="Abrir",
-                width=70,
-                height=28,
+                width=58,
+                height=26,
                 fg_color="#2563EB",
                 hover_color="#3B82F6",
                 text_color="#FFFFFF",
-                corner_radius=8,
-                font=ctk.CTkFont(size=11, weight="bold"),
+                corner_radius=7,
+                font=ctk.CTkFont(size=10, weight="bold"),
                 command=lambda p=pr: self._handle_open_pr_click(p)
             )
-            open_btn.pack(side="left", padx=(0, 6))
+            open_btn.pack(side="left", padx=(0, 5))
 
             merge_btn = ctk.CTkButton(
                 actions_row,
                 text="Merge",
-                width=70,
-                height=28,
+                width=58,
+                height=26,
                 fg_color="#374151",
                 hover_color="#4B5563",
                 text_color=APP_COLORS["text"],
-                corner_radius=8,
-                font=ctk.CTkFont(size=11, weight="bold"),
+                corner_radius=7,
+                font=ctk.CTkFont(size=10, weight="bold"),
                 command=lambda p=pr: self._handle_merge_pr_click(p)
             )
             merge_btn.pack(side="left")
@@ -420,18 +420,18 @@ class LeftSidebar(ctk.CTkFrame):
 
         self._section_divider()
         cloud = SidebarSection(self.scroll, "CLOUD PATCHES", "0", expanded=True, fonts=self.fonts)
-        cloud.pack(fill="x", padx=0, pady=(0, 10))
+        cloud.pack(fill="x", padx=0, pady=(0, 8))
 
         self._section_divider()
         self._render_pull_requests_section()
 
         self._section_divider()
         issues = SidebarSection(self.scroll, "ISSUES", "", expanded=False, fonts=self.fonts)
-        issues.pack(fill="x", padx=0, pady=(0, 6))
+        issues.pack(fill="x", padx=0, pady=(0, 5))
 
         self._section_divider()
         teams = SidebarSection(self.scroll, "TEAMS", "", expanded=False, fonts=self.fonts)
-        teams.pack(fill="x", padx=0, pady=(0, 6))
+        teams.pack(fill="x", padx=0, pady=(0, 5))
 
     def _render_branches(self, branches: list[str]):
         self._clear_sections()
