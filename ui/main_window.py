@@ -116,11 +116,8 @@ class MainWindow(ctk.CTk):
         screen_width = self.winfo_screenwidth()
         screen_height = self.winfo_screenheight()
 
-        width = int(screen_width * 0.96)
+        width = int(screen_width * 0.985)
         height = int(screen_height * 0.92)
-
-        if screen_width < 1400:
-            width = int(screen_width * 0.985)
 
         min_width = 980
         min_height = 620
@@ -141,7 +138,7 @@ class MainWindow(ctk.CTk):
 
         self.grid_columnconfigure(0, weight=0, minsize=205)
         self.grid_columnconfigure(1, weight=1)
-        self.grid_columnconfigure(2, weight=0, minsize=255)
+        self.grid_columnconfigure(2, weight=0, minsize=250)
 
     def _load_initial_data(self):
         self.top_bar.set_branches([], current_branch="")
