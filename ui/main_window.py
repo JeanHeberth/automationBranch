@@ -120,8 +120,8 @@ class MainWindow(ctk.CTk):
         width = int(screen_width * 0.92)
         height = int(screen_height * 0.88)
 
-        min_width = 1100
-        min_height = 680
+        min_width = 900
+        min_height = 600
 
         width = max(width, min_width)
         height = max(height, min_height)
