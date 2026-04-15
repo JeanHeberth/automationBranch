@@ -9,7 +9,7 @@ class TopBar(ctk.CTkFrame):
             master,
             fg_color=APP_COLORS["topbar"],
             corner_radius=0,
-            height=68
+            height=62
         )
 
         self.on_select_repo = on_select_repo
@@ -22,94 +22,110 @@ class TopBar(ctk.CTkFrame):
         self.hidden_actions: list[str] = []
         self.actions_popup = None
         self._responsive_job = None
+        self._size_mode = "large"
 
-        self.grid_columnconfigure(0, weight=3)
-        self.grid_columnconfigure(1, weight=7)
-        self.grid_columnconfigure(2, weight=2)
+        # Protege esquerda e direita; centro fica com o espaço restante
+        self.grid_columnconfigure(0, weight=0, minsize=350)
+        self.grid_columnconfigure(1, weight=1)
+        self.grid_columnconfigure(2, weight=0, minsize=210)
 
         self._build_left_section()
         self._build_center_section()
         self._build_right_section()
 
         self.bind("<Configure>", self._schedule_responsive_update)
-        self.after(120, self._apply_responsive_layout)
+        self.after(100, self._apply_responsive_layout)
 
+    # =========================
+    # LEFT
+    # =========================
     def _build_left_section(self):
-        frame = ctk.CTkFrame(self, fg_color="transparent")
-        frame.grid(row=0, column=0, sticky="w", padx=10, pady=6)
+        self.left_wrapper = ctk.CTkFrame(self, fg_color="transparent")
+        self.left_wrapper.grid(row=0, column=0, sticky="w", padx=8, pady=5)
 
         ctk.CTkLabel(
-            frame,
+            self.left_wrapper,
             text="repository",
             text_color=APP_COLORS["muted"],
-            font=ctk.CTkFont(size=11)
-        ).grid(row=0, column=0, sticky="w", padx=(0, 6))
+            font=ctk.CTkFont(size=10)
+        ).grid(row=0, column=0, sticky="w", padx=(0, 4))
 
         self.repo_menu = ctk.CTkOptionMenu(
-            frame,
+            self.left_wrapper,
             values=["Selecione um repositório"],
             variable=self.repo_var,
-            width=170,
-            height=32,
+            width=150,
+            height=30,
             fg_color="#202631",
             button_color="#596273",
             button_hover_color="#697385",
             text_color=APP_COLORS["text"],
-            corner_radius=8,
-            font=ctk.CTkFont(size=12)
+            corner_radius=7,
+            font=ctk.CTkFont(size=11)
         )
-        self.repo_menu.grid(row=1, column=0, padx=(0, 8), pady=(4, 0))
+        self.repo_menu.grid(row=1, column=0, padx=(0, 6), pady=(3, 0))
 
         self.open_repo_btn = self._create_secondary_button(
-            frame,
+            self.left_wrapper,
             text="Abrir",
             icon_name="repo.png",
             command=self.on_select_repo,
-            width=86
+            width=78
         )
-        self.open_repo_btn.grid(row=1, column=1, padx=(0, 10), pady=(4, 0))
+        self.open_repo_btn.grid(row=1, column=1, padx=(0, 8), pady=(3, 0))
 
         ctk.CTkLabel(
-            frame,
+            self.left_wrapper,
             text="branch",
             text_color=APP_COLORS["muted"],
-            font=ctk.CTkFont(size=11)
-        ).grid(row=0, column=2, sticky="w", padx=(0, 6))
+            font=ctk.CTkFont(size=10)
+        ).grid(row=0, column=2, sticky="w", padx=(0, 4))
 
-        branch_group = ctk.CTkFrame(frame, fg_color="transparent")
-        branch_group.grid(row=1, column=2, sticky="w", pady=(4, 0))
+        self.branch_group = ctk.CTkFrame(self.left_wrapper, fg_color="transparent")
+        self.branch_group.grid(row=1, column=2, sticky="w", pady=(3, 0))
 
         self.branch_menu = ctk.CTkOptionMenu(
-            branch_group,
+            self.branch_group,
             values=["Nenhuma branch"],
             variable=self.branch_var,
-            width=160,
-            height=32,
+            width=138,
+            height=30,
             fg_color="#202631",
             button_color="#596273",
             button_hover_color="#697385",
             text_color=APP_COLORS["text"],
-            corner_radius=8,
-            font=ctk.CTkFont(size=12),
+            corner_radius=7,
+            font=ctk.CTkFont(size=11),
             command=self._handle_branch_menu_change,
             state="disabled"
         )
         self.branch_menu.pack(side="left", padx=(0, 6))
 
+        # Refresh continua sempre fora do overflow
         self.refresh_btn = self._create_icon_button(
-            branch_group,
+            self.branch_group,
             icon_name="refresh.png",
             command=lambda: self.on_action("Refresh")
         )
         self.refresh_btn.pack(side="left")
 
+    # =========================
+    # CENTER
+    # =========================
     def _build_center_section(self):
         self.center_wrapper = ctk.CTkFrame(self, fg_color="transparent")
-        self.center_wrapper.grid(row=0, column=1, sticky="nsew", padx=8, pady=6)
+        self.center_wrapper.grid(row=0, column=1, sticky="nsew", padx=4, pady=5)
 
         self.toolbar_groups = [
             [("Undo", "undo.png"), ("Redo", "redo.png")],
-            [("Pull", "pull.png"), ("Push", "push.png"), ("Branch", "branch.png"), ("Delete Branch", "actions.png"), ("Stash", "stash.png"), ("Pop", "pop.png")],
+            [
+                ("Pull", "pull.png"),
+                ("Push", "push.png"),
+                ("Branch", "branch.png"),
+                ("Delete Branch", "actions.png"),
+                ("Stash", "stash.png"),
+                ("Pop", "pop.png")
+            ],
             [("Open PR", "actions.png"), ("Merge PR", "actions.png"), ("Terminal", "terminal.png")],
         ]
 
@@ -139,25 +155,29 @@ class TopBar(ctk.CTkFrame):
                     command=lambda action=label: self.on_action(action),
                     width=self._get_toolbar_button_width(label)
                 )
-                button.grid(row=0, column=index, padx=2, pady=0)
+                button.grid(row=0, column=index, padx=1, pady=0)
 
             if group_index < len(visible_groups) - 1:
                 sep = ctk.CTkFrame(
                     self.center_wrapper,
                     fg_color="#4b5363",
                     width=1,
-                    height=24
+                    height=18
                 )
-                sep.grid(row=0, column=(group_index * 2) + 1, padx=8, pady=6, sticky="ns")
+                sep.grid(row=0, column=(group_index * 2) + 1, padx=6, pady=6, sticky="ns")
 
     def _get_toolbar_button_width(self, label: str) -> int:
         if label in {"Undo", "Redo"}:
-            return 72
-        if label in {"Open PR", "Merge PR", "Delete Branch"}:
-            return 108
+            return 58
+        if label in {"Pull", "Push", "Branch", "Stash", "Pop"}:
+            return 64
+        if label == "Delete Branch":
+            return 94
+        if label in {"Open PR", "Merge PR"}:
+            return 76
         if label == "Terminal":
-            return 82
-        return 78
+            return 70
+        return 64
 
     def _get_visible_center_actions(self) -> list[str]:
         width = max(self.winfo_width(), 1)
@@ -168,63 +188,62 @@ class TopBar(ctk.CTkFrame):
             "Open PR", "Merge PR", "Terminal"
         ]
 
-        if width >= 1580:
+        if width >= 1500:
             self.hidden_actions = []
             return all_actions
 
-        if width >= 1450:
+        if width >= 1380:
             self.hidden_actions = ["Terminal"]
             return [a for a in all_actions if a not in self.hidden_actions]
 
-        if width >= 1340:
+        if width >= 1280:
             self.hidden_actions = ["Open PR", "Merge PR", "Terminal"]
             return [a for a in all_actions if a not in self.hidden_actions]
 
-        if width >= 1240:
-            self.hidden_actions = ["Pop", "Open PR", "Merge PR", "Terminal"]
-            return [a for a in all_actions if a not in self.hidden_actions]
-
-        if width >= 1160:
-            self.hidden_actions = ["Stash", "Pop", "Open PR", "Merge PR", "Terminal"]
+        if width >= 1180:
+            self.hidden_actions = ["Delete Branch", "Open PR", "Merge PR", "Terminal"]
             return [a for a in all_actions if a not in self.hidden_actions]
 
         if width >= 1080:
-            self.hidden_actions = ["Delete Branch", "Branch", "Stash", "Pop", "Open PR", "Merge PR", "Terminal"]
+            self.hidden_actions = ["Stash", "Pop", "Delete Branch", "Open PR", "Merge PR", "Terminal"]
             return [a for a in all_actions if a not in self.hidden_actions]
 
-        self.hidden_actions = ["Push", "Delete Branch", "Branch", "Stash", "Pop", "Open PR", "Merge PR", "Terminal"]
+        self.hidden_actions = ["Branch", "Stash", "Pop", "Delete Branch", "Open PR", "Merge PR", "Terminal"]
         return [a for a in all_actions if a not in self.hidden_actions]
 
+    # =========================
+    # RIGHT
+    # =========================
     def _build_right_section(self):
         self.right_wrapper = ctk.CTkFrame(self, fg_color="transparent")
-        self.right_wrapper.grid(row=0, column=2, sticky="e", padx=10, pady=6)
+        self.right_wrapper.grid(row=0, column=2, sticky="e", padx=8, pady=5)
 
         self.actions_btn = self._create_secondary_button(
             self.right_wrapper,
             text="Actions",
             icon_name="actions.png",
             command=self._toggle_actions_popup,
-            width=110
+            width=88
         )
-        self.actions_btn.grid(row=0, column=0, padx=4, pady=0)
+        self.actions_btn.grid(row=0, column=0, padx=3, pady=0)
 
         self.search_btn = self._create_secondary_button(
             self.right_wrapper,
             text="Search",
             icon_name="search.png",
             command=lambda: self.on_action("Search"),
-            width=86
+            width=76
         )
-        self.search_btn.grid(row=0, column=1, padx=4, pady=0)
+        self.search_btn.grid(row=0, column=1, padx=3, pady=0)
 
         self.profile_btn = self._create_secondary_button(
             self.right_wrapper,
             text="Profile",
             icon_name="profile.png",
             command=lambda: self.on_action("Profile"),
-            width=92
+            width=78
         )
-        self.profile_btn.grid(row=0, column=2, padx=4, pady=0)
+        self.profile_btn.grid(row=0, column=2, padx=3, pady=0)
 
     def _update_actions_button_label(self):
         if self.hidden_actions:
@@ -270,15 +289,16 @@ class TopBar(ctk.CTkFrame):
             btn = ctk.CTkButton(
                 container,
                 text=action,
-                height=34,
+                height=32,
                 fg_color="transparent",
                 hover_color="#374151",
                 text_color=APP_COLORS["text"],
                 anchor="w",
                 corner_radius=8,
+                font=ctk.CTkFont(size=11),
                 command=lambda a=action: self._handle_popup_action(a)
             )
-            btn.pack(fill="x", padx=8, pady=4)
+            btn.pack(fill="x", padx=8, pady=3)
 
         self.actions_popup = popup
         popup.bind("<FocusOut>", lambda _e: self._close_actions_popup())
@@ -293,68 +313,128 @@ class TopBar(ctk.CTkFrame):
             self.actions_popup.destroy()
         self.actions_popup = None
 
+    # =========================
+    # RESPONSIVE
+    # =========================
     def _schedule_responsive_update(self, _event=None):
         if self._responsive_job is not None:
             self.after_cancel(self._responsive_job)
-
-        self._responsive_job = self.after(80, self._apply_responsive_layout)
+        self._responsive_job = self.after(60, self._apply_responsive_layout)
 
     def _apply_responsive_layout(self):
         self._responsive_job = None
+
+        width = max(self.winfo_width(), 1)
+
+        if width >= 1450:
+            self._size_mode = "large"
+        elif width >= 1180:
+            self._size_mode = "medium"
+        else:
+            self._size_mode = "small"
+
+        self._apply_left_responsive()
+        self._apply_right_responsive()
         self._render_center_toolbar()
         self._update_actions_button_label()
 
-    def _create_toolbar_button(self, master, text, icon_name, command, width=80):
+    def _apply_left_responsive(self):
+        if self._size_mode == "large":
+            self.repo_menu.configure(width=150)
+            self.branch_menu.configure(width=138)
+            self.open_repo_btn.configure(text="Abrir", width=78)
+            self.grid_columnconfigure(0, minsize=350)
+            return
+
+        if self._size_mode == "medium":
+            self.repo_menu.configure(width=130)
+            self.branch_menu.configure(width=118)
+            self.open_repo_btn.configure(text="Abrir", width=74)
+            self.grid_columnconfigure(0, minsize=315)
+            return
+
+        self.repo_menu.configure(width=118)
+        self.branch_menu.configure(width=104)
+        self.open_repo_btn.configure(text="", width=34)
+        self.grid_columnconfigure(0, minsize=285)
+
+    def _apply_right_responsive(self):
+        if self._size_mode == "large":
+            self.actions_btn.configure(text="Actions", width=88)
+            self.search_btn.configure(text="Search", width=76)
+            self.profile_btn.configure(text=self.profile_btn.cget("text"), width=78)
+            self.grid_columnconfigure(2, minsize=210)
+            return
+
+        if self._size_mode == "medium":
+            self.actions_btn.configure(text="Actions", width=82)
+            self.search_btn.configure(text="", width=34)
+            self.profile_btn.configure(text="", width=34)
+            self.grid_columnconfigure(2, minsize=160)
+            return
+
+        self.actions_btn.configure(text="", width=34)
+        self.search_btn.configure(text="", width=34)
+        self.profile_btn.configure(text="", width=34)
+        self.grid_columnconfigure(2, minsize=122)
+
+    # =========================
+    # BUTTON HELPERS
+    # =========================
+    def _create_toolbar_button(self, master, text, icon_name, command, width=64):
         return ctk.CTkButton(
             master,
             text=text,
-            image=load_icon(icon_name, size=(40, 40)),
+            image=load_icon(icon_name, size=(14, 14)),
             compound="left",
             anchor="center",
             width=width,
-            height=36,
+            height=28,
             command=command,
             fg_color="transparent",
             hover_color="#4b5563",
             text_color=APP_COLORS["text"],
-            corner_radius=8,
+            corner_radius=7,
             border_width=0,
-            border_spacing=4,
-            font=ctk.CTkFont(size=11, weight="bold")
+            border_spacing=3,
+            font=ctk.CTkFont(size=10, weight="bold")
         )
 
-    def _create_secondary_button(self, master, text, icon_name, command, width=90):
+    def _create_secondary_button(self, master, text, icon_name, command, width=78):
         return ctk.CTkButton(
             master,
             text=text,
-            image=load_icon(icon_name, size=(16, 16)),
+            image=load_icon(icon_name, size=(13, 13)),
             compound="left",
             anchor="center",
             width=width,
-            height=32,
+            height=30,
             command=command,
             fg_color="#3b414d",
             hover_color="#4b5563",
             text_color=APP_COLORS["text"],
-            corner_radius=8,
+            corner_radius=7,
             border_width=0,
-            font=ctk.CTkFont(size=11)
+            font=ctk.CTkFont(size=10)
         )
 
     def _create_icon_button(self, master, icon_name, command):
         return ctk.CTkButton(
             master,
             text="",
-            image=load_icon(icon_name, size=(18, 18)),
-            width=32,
-            height=32,
+            image=load_icon(icon_name, size=(13, 13)),
+            width=30,
+            height=30,
             command=command,
-            fg_color="#3b414d",
-            hover_color="#1591EA",
-            corner_radius=8,
+            fg_color="#1d8fe1",
+            hover_color="#2ea4f7",
+            corner_radius=7,
             border_width=0
         )
 
+    # =========================
+    # PUBLIC API
+    # =========================
     def _handle_branch_menu_change(self, selected_branch: str):
         if selected_branch == "Nenhuma branch":
             return
