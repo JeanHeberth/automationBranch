@@ -310,7 +310,7 @@ class TopBar(ctk.CTkFrame):
         return ctk.CTkButton(
             master,
             text=text,
-            image=load_icon(icon_name, size=(22, 22)),
+            image=load_icon(icon_name, size=(30, 30)),
             compound="left",
             anchor="center",
             width=width,
@@ -347,12 +347,12 @@ class TopBar(ctk.CTkFrame):
         return ctk.CTkButton(
             master,
             text="",
-            image=load_icon(icon_name, size=(17, 17)),
+            image=load_icon(icon_name, size=(22, 22)),
             width=32,
             height=32,
             command=command,
             fg_color="#3b414d",
-            hover_color="#4b5563",
+            hover_color="#2563EB",
             corner_radius=8,
             border_width=0
         )
