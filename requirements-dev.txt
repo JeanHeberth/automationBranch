@@ -1,0 +1,8 @@
+-r requirements.txt
+
+# Ferramentas de desenvolvimento / CI (usadas pelo pipeline em .github/workflows).
+pytest>=8.0
+pytest-cov>=5.0
+flake8>=7.0
+black>=24.0
+bandit>=1.7
