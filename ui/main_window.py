@@ -424,7 +424,13 @@ class MainWindow(ctk.CTk):
             )
             return
 
-        existing_pr = find_open_pull_request_by_head(self.selected_repo_path, current_branch)
+        try:
+            existing_pr = find_open_pull_request_by_head(self.selected_repo_path, current_branch)
+        except GitServiceError as exc:
+            messagebox.showerror("Erro ao consultar Pull Requests", str(exc))
+            self.set_status("Falha ao consultar Pull Requests.")
+            return
+
         if existing_pr:
             self.load_pull_requests()
             self.set_status(f"PR já existe para a branch {current_branch}.")
@@ -479,17 +485,22 @@ class MainWindow(ctk.CTk):
             return
 
         current_branch = get_current_branch(self.selected_repo_path)
-        current_pr = find_open_pull_request_by_head(self.selected_repo_path, current_branch)
 
         pr_number = None
         pr_title = ""
+
+        try:
+            current_pr = find_open_pull_request_by_head(self.selected_repo_path, current_branch)
+            prs = [] if current_pr else list_open_pull_requests(self.selected_repo_path)
+        except GitServiceError as exc:
+            messagebox.showerror("Erro ao consultar Pull Requests", str(exc))
+            self.set_status("Falha ao consultar Pull Requests.")
+            return
 
         if current_pr:
             pr_number = current_pr["number"]
             pr_title = current_pr["title"]
         else:
-            prs = list_open_pull_requests(self.selected_repo_path)
-
             if not prs:
                 messagebox.showwarning(
                     "Sem Pull Requests",

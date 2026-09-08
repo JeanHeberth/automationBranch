@@ -26,7 +26,9 @@ def get_remote_branches(repo_path: str) -> List[str]:
     branches = []
     for line in output.splitlines():
         branch = line.strip()
-        if not branch or "->" in branch:
+        # Ignora linhas vazias, o ponteiro simbólico (ex.: "origin/HEAD -> origin/main")
+        # e o próprio "origin" que o %(refname:short) gera para refs/remotes/origin/HEAD.
+        if not branch or "->" in branch or "/" not in branch:
             continue
         branches.append(branch)
 
