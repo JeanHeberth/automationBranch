@@ -49,9 +49,25 @@ def get_origin_remote_url(repo_path: str) -> str:
         return ""
 
 
+def is_detached_head(repo_path: str) -> bool:
+    try:
+        run_git_command(repo_path, ["symbolic-ref", "-q", "HEAD"])
+        return False
+    except GitServiceError:
+        return True
+
+
 def get_current_branch(repo_path: str) -> str:
-    output = run_git_command(repo_path, ["branch", "--show-current"])
-    return output.strip()
+    output = run_git_command(repo_path, ["branch", "--show-current"]).strip()
+    if output:
+        return output
+
+    # Detached HEAD (ou repositório sem commits): "--show-current" volta vazio.
+    # Usa o hash abreviado, que continua sendo uma revisão válida para "git log".
+    try:
+        return run_git_command(repo_path, ["rev-parse", "--short", "HEAD"]).strip()
+    except GitServiceError:
+        return ""
 
 
 def checkout_branch(repo_path: str, branch_name: str) -> str:
