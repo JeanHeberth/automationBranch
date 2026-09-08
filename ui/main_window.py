@@ -2,7 +2,7 @@ import os
 import threading
 import webbrowser
 import customtkinter as ctk
-from tkinter import filedialog, messagebox, simpledialog
+from tkinter import filedialog, messagebox, simpledialog, TclError
 
 from ui.top_bar import TopBar
 from ui.left_sidebar import LeftSidebar
@@ -306,10 +306,14 @@ class MainWindow(ctk.CTk):
 
         def finish_ok(result):
             self._bg_busy = False
+            if not self.winfo_exists():
+                return
             on_success(result)
 
         def finish_err(exc):
             self._bg_busy = False
+            if not self.winfo_exists():
+                return
             messagebox.showerror(error_title, str(exc))
             self.set_status(error_status)
 
@@ -317,11 +321,18 @@ class MainWindow(ctk.CTk):
             try:
                 result = work()
             except Exception as exc:  # GitServiceError, erros de rede, etc.
-                self.after(0, lambda e=exc: finish_err(e))
+                self._safe_after(lambda e=exc: finish_err(e))
             else:
-                self.after(0, lambda r=result: finish_ok(r))
+                self._safe_after(lambda r=result: finish_ok(r))
 
         threading.Thread(target=runner, daemon=True).start()
+
+    def _safe_after(self, callback):
+        """Agenda um callback na thread da UI, ignorando o caso da janela já ter fechado."""
+        try:
+            self.after(0, callback)
+        except (RuntimeError, TclError):
+            pass
 
     def _finish_git_action(self, result, success_status: str, dialog_title: str, default_msg: str):
         current_branch = get_current_branch(self.selected_repo_path)
@@ -388,17 +399,18 @@ class MainWindow(ctk.CTk):
         repo_path = self.selected_repo_path
 
         def apply(prs):
-            # Descarta o resultado se o usuário já trocou de repositório.
-            if self.selected_repo_path == repo_path:
-                self.left_sidebar.set_pull_requests(prs)
+            # Descarta o resultado se a janela fechou ou o repositório mudou.
+            if not self.winfo_exists() or self.selected_repo_path != repo_path:
+                return
+            self.left_sidebar.set_pull_requests(prs)
 
         def runner():
             try:
                 prs = list_open_pull_requests(repo_path)
             except Exception:
-                self.after(0, lambda: apply([]))
+                self._safe_after(lambda: apply([]))
             else:
-                self.after(0, lambda: apply(prs))
+                self._safe_after(lambda: apply(prs))
 
         threading.Thread(target=runner, daemon=True).start()
 

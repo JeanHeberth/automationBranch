@@ -6,8 +6,10 @@ from services.branch_service import (
     get_current_branch,
     get_local_branches,
     get_remote_branches,
+    is_detached_head,
     is_git_repository,
 )
+from services.git_runner import run_git_command
 
 
 def test_is_git_repository(git_repo, tmp_path):
@@ -19,6 +21,18 @@ def test_is_git_repository(git_repo, tmp_path):
 
 def test_get_current_branch(git_repo):
     assert get_current_branch(git_repo) == "main"
+    assert is_detached_head(git_repo) is False
+
+
+def test_get_current_branch_detached_head(git_repo):
+    sha = run_git_command(git_repo, ["rev-parse", "HEAD"])
+    run_git_command(git_repo, ["checkout", sha])
+
+    assert is_detached_head(git_repo) is True
+
+    atual = get_current_branch(git_repo)
+    assert atual  # não pode ser vazio
+    assert sha.startswith(atual)  # é o hash abreviado
 
 
 def test_get_local_branches(git_repo):

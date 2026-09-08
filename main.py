@@ -1,6 +1,25 @@
+import sys
+
 from dotenv import load_dotenv
 
 load_dotenv()
+
+
+def _report_startup_error(exc: BaseException) -> None:
+    message = (
+        "Não foi possível iniciar o Automation Branch.\n\n"
+        f"{type(exc).__name__}: {exc}"
+    )
+    try:
+        import tkinter as tk
+        from tkinter import messagebox
+
+        root = tk.Tk()
+        root.withdraw()
+        messagebox.showerror("Erro ao iniciar", message)
+        root.destroy()
+    except Exception:
+        print(message, file=sys.stderr)
 
 
 def main():
@@ -16,7 +35,12 @@ def main():
             ) from exc
         raise
 
-    app = MainWindow()
+    try:
+        app = MainWindow()
+    except Exception as exc:
+        _report_startup_error(exc)
+        raise SystemExit(1) from exc
+
     app.mainloop()
 
 
