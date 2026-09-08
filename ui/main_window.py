@@ -489,7 +489,8 @@ class MainWindow(ctk.CTk):
             )
             return
 
-        current_branch = get_current_branch(self.selected_repo_path)
+        repo_path = self.selected_repo_path
+        current_branch = get_current_branch(repo_path)
 
         if current_branch == "main":
             messagebox.showwarning(
@@ -498,13 +499,16 @@ class MainWindow(ctk.CTk):
             )
             return
 
-        try:
-            existing_pr = find_open_pull_request_by_head(self.selected_repo_path, current_branch)
-        except GitServiceError as exc:
-            messagebox.showerror("Erro ao consultar Pull Requests", str(exc))
-            self.set_status("Falha ao consultar Pull Requests.")
-            return
+        # 1º passo (rede): verifica se já existe um PR aberto para a branch.
+        self._run_in_background(
+            lambda: find_open_pull_request_by_head(repo_path, current_branch),
+            lambda existing_pr: self._open_pr_after_check(repo_path, current_branch, existing_pr),
+            busy_message="Consultando Pull Requests...",
+            error_title="Erro ao consultar Pull Requests",
+            error_status="Falha ao consultar Pull Requests.",
+        )
 
+    def _open_pr_after_check(self, repo_path: str, current_branch: str, existing_pr):
         if existing_pr:
             self.load_pull_requests()
             self.set_status(f"PR já existe para a branch {current_branch}.")
@@ -530,25 +534,28 @@ class MainWindow(ctk.CTk):
         if body is None:
             body = ""
 
-        try:
-            pr = create_pull_request(
-                self.selected_repo_path,
+        # 2º passo (rede): cria o PR.
+        self._run_in_background(
+            lambda: create_pull_request(
+                repo_path,
                 title=title,
                 body=body,
                 base_branch="main",
-                head_branch=current_branch
-            )
+                head_branch=current_branch,
+            ),
+            self._finish_open_pr,
+            busy_message="Abrindo Pull Request...",
+            error_title="Erro ao abrir PR",
+            error_status="Falha ao abrir Pull Request.",
+        )
 
-            self.load_pull_requests()
-            self.set_status(f"PR aberto com sucesso: #{pr['number']}")
-            messagebox.showinfo(
-                "Pull Request criado",
-                f"PR #{pr['number']} criado com sucesso.\n\n{pr['title']}\n{pr['url']}"
-            )
-
-        except GitServiceError as exc:
-            messagebox.showerror("Erro ao abrir PR", str(exc))
-            self.set_status("Falha ao abrir Pull Request.")
+    def _finish_open_pr(self, pr: dict):
+        self.load_pull_requests()
+        self.set_status(f"PR aberto com sucesso: #{pr['number']}")
+        messagebox.showinfo(
+            "Pull Request criado",
+            f"PR #{pr['number']} criado com sucesso.\n\n{pr['title']}\n{pr['url']}"
+        )
 
     def _handle_merge_pr(self):
         if not self.selected_repo_path:
@@ -558,18 +565,25 @@ class MainWindow(ctk.CTk):
             )
             return
 
-        current_branch = get_current_branch(self.selected_repo_path)
+        repo_path = self.selected_repo_path
+        current_branch = get_current_branch(repo_path)
 
-        pr_number = None
+        def query():
+            current_pr = find_open_pull_request_by_head(repo_path, current_branch)
+            prs = [] if current_pr else list_open_pull_requests(repo_path)
+            return current_pr, prs
+
+        # 1º passo (rede): descobre quais PRs estão abertos.
+        self._run_in_background(
+            query,
+            lambda data: self._merge_pr_after_query(repo_path, data[0], data[1]),
+            busy_message="Consultando Pull Requests...",
+            error_title="Erro ao consultar Pull Requests",
+            error_status="Falha ao consultar Pull Requests.",
+        )
+
+    def _merge_pr_after_query(self, repo_path: str, current_pr, prs: list):
         pr_title = ""
-
-        try:
-            current_pr = find_open_pull_request_by_head(self.selected_repo_path, current_branch)
-            prs = [] if current_pr else list_open_pull_requests(self.selected_repo_path)
-        except GitServiceError as exc:
-            messagebox.showerror("Erro ao consultar Pull Requests", str(exc))
-            self.set_status("Falha ao consultar Pull Requests.")
-            return
 
         if current_pr:
             pr_number = current_pr["number"]
@@ -611,8 +625,11 @@ class MainWindow(ctk.CTk):
         if not confirm:
             return
 
+        pr_number = int(pr_number)
+
+        # 2º passo (rede): faz o merge.
         self._run_in_background(
-            lambda: merge_pull_request(self.selected_repo_path, pr_number),
+            lambda: merge_pull_request(repo_path, pr_number),
             lambda result: self._finish_merge(result, pr_number),
             busy_message=f"Mesclando PR #{pr_number}...",
             error_title="Erro ao mergear PR",
