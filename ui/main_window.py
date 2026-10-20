@@ -1,8 +1,10 @@
 import os
+import threading
 import webbrowser
 import customtkinter as ctk
-from tkinter import filedialog, messagebox, simpledialog
+from tkinter import filedialog, messagebox, TclError
 
+from ui.dialogs import ask_string
 from ui.top_bar import TopBar
 from ui.left_sidebar import LeftSidebar
 from ui.center_panel import CenterPanel
@@ -70,6 +72,8 @@ class MainWindow(ctk.CTk):
         self.repositories: dict[str, str] = {}
         self.is_updating_branch_ui = False
         self.profile_menu_popup = None
+        # Evita disparar duas operações Git de rede ao mesmo tempo.
+        self._bg_busy = False
 
         self._configure_window_size()
         self._configure_grid()
@@ -277,6 +281,76 @@ class MainWindow(ctk.CTk):
     def set_status(self, text: str):
         self.status_label.configure(text=text)
 
+    def _run_in_background(
+        self,
+        work,
+        on_success,
+        *,
+        busy_message: str,
+        error_title: str,
+        error_status: str,
+    ):
+        """Executa `work()` numa thread separada para não travar a janela.
+
+        `on_success` e o tratamento de erro rodam de volta na thread da UI
+        via `self.after`, que é a forma segura de mexer nos widgets do Tkinter.
+        """
+        if self._bg_busy:
+            messagebox.showinfo(
+                "Operação em andamento",
+                "Aguarde a conclusão da operação Git atual."
+            )
+            return
+
+        self._bg_busy = True
+        self.set_status(busy_message)
+
+        def finish_ok(result):
+            self._bg_busy = False
+            if not self.winfo_exists():
+                return
+            on_success(result)
+
+        def finish_err(exc):
+            self._bg_busy = False
+            if not self.winfo_exists():
+                return
+            messagebox.showerror(error_title, str(exc))
+            self.set_status(error_status)
+
+        def runner():
+            try:
+                result = work()
+            except Exception as exc:  # GitServiceError, erros de rede, etc.
+                self._safe_after(lambda e=exc: finish_err(e))
+            else:
+                self._safe_after(lambda r=result: finish_ok(r))
+
+        threading.Thread(target=runner, daemon=True).start()
+
+    def _safe_after(self, callback):
+        """Agenda um callback na thread da UI, ignorando o caso da janela já ter fechado."""
+        try:
+            self.after(0, callback)
+        except (RuntimeError, TclError):
+            pass
+
+    def _finish_git_action(self, result, success_status: str, dialog_title: str, default_msg: str):
+        current_branch = get_current_branch(self.selected_repo_path)
+        self.sync_branch_ui(current_branch)
+        self.set_status(success_status)
+        messagebox.showinfo(dialog_title, result or default_msg)
+
+    def _finish_merge(self, result: dict, pr_number: int):
+        self.load_pull_requests()
+        current_branch = get_current_branch(self.selected_repo_path)
+        self.sync_branch_ui(current_branch)
+        self.set_status(f"PR #{pr_number} mergeado com sucesso.")
+        messagebox.showinfo(
+            "Merge realizado",
+            result.get("message", f"PR #{pr_number} mergeado com sucesso.")
+        )
+
     def load_commits_for_branch(self, branch_name: str):
         if not self.selected_repo_path:
             self.center_panel.set_current_branch("")
@@ -322,11 +396,24 @@ class MainWindow(ctk.CTk):
             self.left_sidebar.set_pull_requests([])
             return
 
-        try:
-            prs = list_open_pull_requests(self.selected_repo_path)
+        # Chamada à API do GitHub: roda em segundo plano para não travar a UI.
+        repo_path = self.selected_repo_path
+
+        def apply(prs):
+            # Descarta o resultado se a janela fechou ou o repositório mudou.
+            if not self.winfo_exists() or self.selected_repo_path != repo_path:
+                return
             self.left_sidebar.set_pull_requests(prs)
-        except GitServiceError:
-            self.left_sidebar.set_pull_requests([])
+
+        def runner():
+            try:
+                prs = list_open_pull_requests(repo_path)
+            except Exception:
+                self._safe_after(lambda: apply([]))
+            else:
+                self._safe_after(lambda: apply(prs))
+
+        threading.Thread(target=runner, daemon=True).start()
 
     def sync_branch_ui(self, branch_name: str):
         if not self.selected_repo_path:
@@ -415,7 +502,8 @@ class MainWindow(ctk.CTk):
             )
             return
 
-        current_branch = get_current_branch(self.selected_repo_path)
+        repo_path = self.selected_repo_path
+        current_branch = get_current_branch(repo_path)
 
         if current_branch == "main":
             messagebox.showwarning(
@@ -424,7 +512,16 @@ class MainWindow(ctk.CTk):
             )
             return
 
-        existing_pr = find_open_pull_request_by_head(self.selected_repo_path, current_branch)
+        # 1º passo (rede): verifica se já existe um PR aberto para a branch.
+        self._run_in_background(
+            lambda: find_open_pull_request_by_head(repo_path, current_branch),
+            lambda existing_pr: self._open_pr_after_check(repo_path, current_branch, existing_pr),
+            busy_message="Consultando Pull Requests...",
+            error_title="Erro ao consultar Pull Requests",
+            error_status="Falha ao consultar Pull Requests.",
+        )
+
+    def _open_pr_after_check(self, repo_path: str, current_branch: str, existing_pr):
         if existing_pr:
             self.load_pull_requests()
             self.set_status(f"PR já existe para a branch {current_branch}.")
@@ -434,7 +531,7 @@ class MainWindow(ctk.CTk):
             )
             return
 
-        title = simpledialog.askstring(
+        title = ask_string(
             "Abrir Pull Request",
             "Título do PR:",
             initialvalue=f"{current_branch} -> main"
@@ -442,7 +539,7 @@ class MainWindow(ctk.CTk):
         if not title:
             return
 
-        body = simpledialog.askstring(
+        body = ask_string(
             "Descrição do PR",
             "Descrição do PR (opcional):",
             initialvalue=""
@@ -450,25 +547,28 @@ class MainWindow(ctk.CTk):
         if body is None:
             body = ""
 
-        try:
-            pr = create_pull_request(
-                self.selected_repo_path,
+        # 2º passo (rede): cria o PR.
+        self._run_in_background(
+            lambda: create_pull_request(
+                repo_path,
                 title=title,
                 body=body,
                 base_branch="main",
-                head_branch=current_branch
-            )
+                head_branch=current_branch,
+            ),
+            self._finish_open_pr,
+            busy_message="Abrindo Pull Request...",
+            error_title="Erro ao abrir PR",
+            error_status="Falha ao abrir Pull Request.",
+        )
 
-            self.load_pull_requests()
-            self.set_status(f"PR aberto com sucesso: #{pr['number']}")
-            messagebox.showinfo(
-                "Pull Request criado",
-                f"PR #{pr['number']} criado com sucesso.\n\n{pr['title']}\n{pr['url']}"
-            )
-
-        except GitServiceError as exc:
-            messagebox.showerror("Erro ao abrir PR", str(exc))
-            self.set_status("Falha ao abrir Pull Request.")
+    def _finish_open_pr(self, pr: dict):
+        self.load_pull_requests()
+        self.set_status(f"PR aberto com sucesso: #{pr['number']}")
+        messagebox.showinfo(
+            "Pull Request criado",
+            f"PR #{pr['number']} criado com sucesso.\n\n{pr['title']}\n{pr['url']}"
+        )
 
     def _handle_merge_pr(self):
         if not self.selected_repo_path:
@@ -478,18 +578,30 @@ class MainWindow(ctk.CTk):
             )
             return
 
-        current_branch = get_current_branch(self.selected_repo_path)
-        current_pr = find_open_pull_request_by_head(self.selected_repo_path, current_branch)
+        repo_path = self.selected_repo_path
+        current_branch = get_current_branch(repo_path)
 
-        pr_number = None
+        def query():
+            current_pr = find_open_pull_request_by_head(repo_path, current_branch)
+            prs = [] if current_pr else list_open_pull_requests(repo_path)
+            return current_pr, prs
+
+        # 1º passo (rede): descobre quais PRs estão abertos.
+        self._run_in_background(
+            query,
+            lambda data: self._merge_pr_after_query(repo_path, data[0], data[1]),
+            busy_message="Consultando Pull Requests...",
+            error_title="Erro ao consultar Pull Requests",
+            error_status="Falha ao consultar Pull Requests.",
+        )
+
+    def _merge_pr_after_query(self, repo_path: str, current_pr, prs: list):
         pr_title = ""
 
         if current_pr:
             pr_number = current_pr["number"]
             pr_title = current_pr["title"]
         else:
-            prs = list_open_pull_requests(self.selected_repo_path)
-
             if not prs:
                 messagebox.showwarning(
                     "Sem Pull Requests",
@@ -501,7 +613,7 @@ class MainWindow(ctk.CTk):
                 pr_number = prs[0]["number"]
                 pr_title = prs[0]["title"]
             else:
-                selected = simpledialog.askstring(
+                selected = ask_string(
                     "Merge Pull Request",
                     "Digite o número do PR que deseja mergear:"
                 )
@@ -526,22 +638,16 @@ class MainWindow(ctk.CTk):
         if not confirm:
             return
 
-        try:
-            result = merge_pull_request(self.selected_repo_path, pr_number)
+        pr_number = int(pr_number)
 
-            self.load_pull_requests()
-            current_branch = get_current_branch(self.selected_repo_path)
-            self.sync_branch_ui(current_branch)
-
-            self.set_status(f"PR #{pr_number} mergeado com sucesso.")
-            messagebox.showinfo(
-                "Merge realizado",
-                result.get("message", f"PR #{pr_number} mergeado com sucesso.")
-            )
-
-        except GitServiceError as exc:
-            messagebox.showerror("Erro ao mergear PR", str(exc))
-            self.set_status("Falha ao mergear Pull Request.")
+        # 2º passo (rede): faz o merge.
+        self._run_in_background(
+            lambda: merge_pull_request(repo_path, pr_number),
+            lambda result: self._finish_merge(result, pr_number),
+            busy_message=f"Mesclando PR #{pr_number}...",
+            error_title="Erro ao mergear PR",
+            error_status="Falha ao mergear Pull Request.",
+        )
 
     def handle_open_pr_item(self, pr: dict):
         url = pr.get("url", "").strip()
@@ -570,22 +676,14 @@ class MainWindow(ctk.CTk):
         if not confirm:
             return
 
-        try:
-            result = merge_pull_request(self.selected_repo_path, int(pr_number))
-
-            self.load_pull_requests()
-            current_branch = get_current_branch(self.selected_repo_path)
-            self.sync_branch_ui(current_branch)
-
-            self.set_status(f"PR #{pr_number} mergeado com sucesso.")
-            messagebox.showinfo(
-                "Merge realizado",
-                result.get("message", f"PR #{pr_number} mergeado com sucesso.")
-            )
-
-        except GitServiceError as exc:
-            messagebox.showerror("Erro ao mergear PR", str(exc))
-            self.set_status("Falha ao mergear Pull Request.")
+        pr_number = int(pr_number)
+        self._run_in_background(
+            lambda: merge_pull_request(self.selected_repo_path, pr_number),
+            lambda result: self._finish_merge(result, pr_number),
+            busy_message=f"Mesclando PR #{pr_number}...",
+            error_title="Erro ao mergear PR",
+            error_status="Falha ao mergear Pull Request.",
+        )
 
     def handle_top_action(self, action_name: str):
         self.set_status(f"Ação executada: {action_name}")
@@ -617,26 +715,36 @@ class MainWindow(ctk.CTk):
             )
             return
 
+        # Pull e Push acessam a rede: rodam em segundo plano.
+        if action_name == "Pull":
+            self._run_in_background(
+                lambda: git_pull(self.selected_repo_path),
+                lambda result: self._finish_git_action(
+                    result, "Pull executado com sucesso.", "Pull",
+                    "Pull executado com sucesso."
+                ),
+                busy_message="Executando pull...",
+                error_title="Erro Git",
+                error_status="Erro ao executar ação: Pull",
+            )
+            return
+
+        if action_name == "Push":
+            self._run_in_background(
+                lambda: git_push(self.selected_repo_path),
+                lambda result: self._finish_git_action(
+                    result, "Push executado com sucesso.", "Push",
+                    "Push executado com sucesso."
+                ),
+                busy_message="Executando push...",
+                error_title="Erro Git",
+                error_status="Erro ao executar ação: Push",
+            )
+            return
+
         try:
-            if action_name == "Pull":
-                result = git_pull(self.selected_repo_path)
-                current_branch = get_current_branch(self.selected_repo_path)
-                self.sync_branch_ui(current_branch)
-                self.set_status("Pull executado com sucesso.")
-                messagebox.showinfo("Pull", result or "Pull executado com sucesso.")
-
-            elif action_name == "Push":
-                result = git_push(self.selected_repo_path)
-                current_branch = get_current_branch(self.selected_repo_path)
-                self.sync_branch_ui(current_branch)
-                self.set_status("Push executado com sucesso.")
-                messagebox.showinfo(
-                    "Push",
-                    result or f"Push executado com sucesso para a branch {current_branch}."
-                )
-
-            elif action_name == "Branch":
-                branch_name = simpledialog.askstring("Criar branch", "Digite o nome da nova branch:")
+            if action_name == "Branch":
+                branch_name = ask_string("Criar branch", "Digite o nome da nova branch:")
                 if not branch_name:
                     return
 
@@ -674,6 +782,9 @@ class MainWindow(ctk.CTk):
             elif action_name == "Search":
                 messagebox.showinfo("Search", "Busca ainda será implementada.")
 
+        except ValueError as exc:
+            messagebox.showwarning("Entrada inválida", str(exc))
+            self.set_status(f"Erro ao executar ação: {action_name}")
         except GitServiceError as exc:
             messagebox.showerror("Erro Git", str(exc))
             self.set_status(f"Erro ao executar ação: {action_name}")

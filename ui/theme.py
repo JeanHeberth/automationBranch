@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from PIL import Image, ImageOps
 import customtkinter as ctk
 import os
@@ -24,7 +26,9 @@ APP_COLORS = {
     "hover": "#374151",
 }
 
-ICON_PATH = "assets/icons"
+# Resolvido a partir da localização deste arquivo, não do diretório de trabalho:
+# assim os ícones são encontrados mesmo rodando o app de outra pasta.
+ICON_PATH = str(Path(__file__).resolve().parent.parent / "assets" / "icons")
 _ICON_CACHE: dict[tuple[str, tuple[int, int]], ctk.CTkImage] = {}
 
 
@@ -59,6 +63,11 @@ def _prepare_icon(image: Image.Image, size: tuple[int, int], padding: int = 2) -
     return canvas
 
 
+def _blank_icon(size: tuple[int, int]) -> ctk.CTkImage:
+    blank = Image.new("RGBA", size, (0, 0, 0, 0))
+    return ctk.CTkImage(light_image=blank, dark_image=blank, size=size)
+
+
 def load_icon(name: str, size=(18, 18), padding: int = 2):
     cache_key = (name, size)
 
@@ -68,16 +77,19 @@ def load_icon(name: str, size=(18, 18), padding: int = 2):
     path = os.path.join(ICON_PATH, name)
 
     if not os.path.exists(path):
-        raise FileNotFoundError(f"Ícone não encontrado: {path}")
+        # Degrada para um ícone vazio em vez de derrubar a janela inteira.
+        print(f"[theme] Ícone não encontrado, usando espaço vazio: {path}")
+        icon = _blank_icon(size)
+        _ICON_CACHE[cache_key] = icon
+        return icon
 
-    image = Image.open(path)
-    prepared = _prepare_icon(image, size=size, padding=padding)
-
-    icon = ctk.CTkImage(
-        light_image=prepared,
-        dark_image=prepared,
-        size=size
-    )
+    try:
+        image = Image.open(path)
+        prepared = _prepare_icon(image, size=size, padding=padding)
+        icon = ctk.CTkImage(light_image=prepared, dark_image=prepared, size=size)
+    except (OSError, ValueError) as exc:
+        print(f"[theme] Falha ao carregar o ícone {path}: {exc}")
+        icon = _blank_icon(size)
 
     _ICON_CACHE[cache_key] = icon
     return icon

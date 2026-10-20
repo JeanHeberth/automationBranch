@@ -17,9 +17,16 @@ USER_URL = "https://api.github.com/user"
 USER_EMAILS_URL = "https://api.github.com/user/emails"
 
 
+# Portas testadas quando a porta preferida está ocupada. O GitHub aceita
+# qualquer porta em redirect URIs de loopback (RFC 8252).
+_FALLBACK_PORTS = [8765, 8766, 8767, 8768, 8888]
+
+
 class _OAuthCallbackServer:
-    def __init__(self, port: int):
-        self.port = port
+    def __init__(self, preferred_port: int, fallback_ports: Optional[list] = None):
+        self.preferred_port = preferred_port
+        self.fallback_ports = list(fallback_ports) if fallback_ports is not None else list(_FALLBACK_PORTS)
+        self.port: Optional[int] = None
         self.httpd: Optional[HTTPServer] = None
         self.event = threading.Event()
         self.payload = {
@@ -27,6 +34,13 @@ class _OAuthCallbackServer:
             "state": None,
             "error": None,
         }
+
+    def _candidate_ports(self) -> list:
+        seen = []
+        for port in [self.preferred_port, *self.fallback_ports]:
+            if port and port not in seen:
+                seen.append(port)
+        return seen
 
     def start(self):
         payload = self.payload
@@ -68,7 +82,25 @@ class _OAuthCallbackServer:
             def log_message(self, format, *args):
                 return
 
-        self.httpd = HTTPServer(("127.0.0.1", self.port), Handler)
+        candidates = self._candidate_ports()
+        last_error: Optional[OSError] = None
+
+        for port in candidates:
+            try:
+                self.httpd = HTTPServer(("127.0.0.1", port), Handler)
+                self.port = port
+                break
+            except OSError as exc:
+                last_error = exc
+
+        if self.httpd is None:
+            tentadas = ", ".join(str(p) for p in candidates)
+            raise GitServiceError(
+                "Não foi possível abrir uma porta local para concluir o login do GitHub "
+                f"(portas tentadas: {tentadas}). Feche o processo que está usando essas "
+                "portas ou defina GITHUB_CALLBACK_PORT com uma porta livre."
+            ) from last_error
+
         thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
         thread.start()
 
@@ -88,13 +120,20 @@ class _OAuthCallbackServer:
 def _get_env_config() -> tuple[str, str, int, str]:
     client_id = os.getenv("GITHUB_CLIENT_ID", "").strip()
     client_secret = os.getenv("GITHUB_CLIENT_SECRET", "").strip()
-    callback_port = int(os.getenv("GITHUB_CALLBACK_PORT", "8765").strip())
     scopes = os.getenv("GITHUB_OAUTH_SCOPES", "repo user:email").strip()
 
     if not client_id or not client_secret:
         raise GitServiceError(
             "GITHUB_CLIENT_ID e GITHUB_CLIENT_SECRET precisam estar configurados no ambiente."
         )
+
+    raw_port = os.getenv("GITHUB_CALLBACK_PORT", "8765").strip()
+    try:
+        callback_port = int(raw_port)
+    except ValueError as exc:
+        raise GitServiceError(
+            f"GITHUB_CALLBACK_PORT inválido: {raw_port!r}. Use um número de porta."
+        ) from exc
 
     return client_id, client_secret, callback_port, scopes
 
@@ -125,11 +164,13 @@ def _pick_primary_email(access_token: str) -> Optional[str]:
 
 def authenticate_with_github() -> dict:
     client_id, client_secret, callback_port, scopes = _get_env_config()
-    redirect_uri = f"http://127.0.0.1:{callback_port}/callback"
     state = secrets.token_urlsafe(32)
 
     callback_server = _OAuthCallbackServer(callback_port)
     callback_server.start()
+
+    # redirect_uri usa a porta realmente aberta (pode ter caído para uma alternativa).
+    redirect_uri = f"http://127.0.0.1:{callback_server.port}/callback"
 
     try:
         params = {

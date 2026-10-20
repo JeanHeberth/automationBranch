@@ -32,16 +32,31 @@ Desenvolvida em Python com foco em produtividade, visual moderno e facilidade de
 ```text
 automationBranch/
 ├── main.py
-├── ui/
-│   ├── main_window.py
+├── ui/                     # Camada de interface (CustomTkinter)
+│   ├── main_window.py       # Janela principal e orquestração das ações
 │   ├── top_bar.py
 │   ├── left_sidebar.py
 │   ├── center_panel.py
 │   ├── right_panel.py
+│   ├── profile_popup.py
+│   ├── profile_menu.py
+│   ├── delete_branch_popup.py
 │   └── theme.py
+├── services/               # Lógica de negócio (Git CLI + GitHub API)
+│   ├── git_runner.py        # Wrapper de subprocess para o Git
+│   ├── branch_service.py
+│   ├── branch_delete_service.py
+│   ├── commit_service.py
+│   ├── sync_service.py      # pull / push / stash
+│   ├── pull_request_service.py
+│   ├── github_auth_service.py
+│   └── session_service.py
+├── tests/                  # Testes com pytest
 ├── assets/
 │   └── icons/
 ├── requirements.txt
+├── requirements-dev.txt    # Dependências de teste / CI
+├── pyproject.toml
 └── README.md
 ```
 
@@ -49,10 +64,11 @@ automationBranch/
 
 ## ⚙️ Tecnologias
 
-- Python 3.14+
+- Python 3.10+ (CI testa nas versões 3.10 a 3.13)
 - CustomTkinter (UI moderna)
 - Pillow (imagens)
-- Git CLI (em breve integração completa)
+- Git CLI (via `subprocess`)
+- GitHub REST API (`requests`) para Pull Requests
 
 ---
 
@@ -66,10 +82,10 @@ cd automation-branch
 ```
 
 ### 2. Configuração do Sistema (Apenas para macOS)
-O Python instalado via Homebrew no Mac não acompanha a interface gráfica por padrão. Instale o suporte ao Tkinter antes de continuar:
+O Python instalado via Homebrew no Mac não acompanha a interface gráfica por padrão. Instale o suporte ao Tkinter antes de continuar (ajuste a versão conforme o seu Python):
 
 ```bash
-brew install python-tk@3.14
+brew install python-tk
 ```
 
 ### 3. Crie e ative o ambiente virtual
@@ -93,27 +109,49 @@ python main.py
 
 ---
 
+## 🧪 Testes
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
+Para ver a cobertura da camada de serviços:
+
+```bash
+pytest --cov=services --cov-report=term
+```
+
+---
+
 ## 📌 Requisitos
 
-- Python 3.14+
+- Python 3.10+
 - Git instalado na máquina
 
 ---
 
 ## 🧠 Roadmap
 
+### ✅ Concluído
+- [x] Integração real com Git (subprocess)
+- [x] Listagem automática de branches (locais e remotas)
+- [x] Checkout de branch
+- [x] Pull / Push real (com criação de upstream)
+- [x] Histórico gráfico de commits
+- [x] Integração com GitHub API (abrir e mergear Pull Requests)
+- [x] Suporte multi-repositório
+- [x] Login via OAuth do GitHub
+
 ### 🔥 Em desenvolvimento
-- [ ] Integração real com Git (subprocess)
-- [ ] Listagem automática de branches
-- [ ] Checkout de branch
-- [ ] Pull / Push real
-- [ ] Histórico gráfico de commits
+- [ ] Operações de rede fora da thread da UI (evitar travamento da janela)
+- [ ] Armazenar o token em keychain (`keyring`) em vez de JSON em texto puro
+- [ ] Aumentar a cobertura de testes
 
 ### 💡 Futuro
-- [ ] Integração com GitHub API
 - [ ] Interface ainda mais próxima do GitKraken
-- [ ] Suporte multi-repositório
 - [ ] Terminal integrado
+- [ ] Desfazer / refazer (undo / redo)
 
 ---
 

@@ -1,5 +1,6 @@
 import os
 import re
+import time
 from typing import List, Dict, Any, Optional
 
 import requests
@@ -9,25 +10,70 @@ from services.git_runner import GitServiceError
 from services.session_service import load_session
 
 
+# Cache curto da listagem de PRs abertos. A UI chama list_open_pull_requests
+# a cada sincronização de branch; sem cache isso estoura o rate limit da API
+# do GitHub (60 req/h por IP quando não há token).
+_PR_CACHE: Dict[tuple, tuple] = {}
+_PR_CACHE_TTL = 30.0
+
+
+def invalidate_pull_request_cache(repo_path: str | None = None) -> None:
+    if repo_path is None:
+        _PR_CACHE.clear()
+        return
+    try:
+        key = _get_repo_info(repo_path)
+    except GitServiceError:
+        _PR_CACHE.clear()
+        return
+    _PR_CACHE.pop(key, None)
+
+
+_GITHUB_HOSTS = {"github.com", "www.github.com"}
+
+
 def _parse_github_repo(origin_url: str) -> tuple[str | None, str | None]:
+    """Extrai (owner, repo) da URL do remote origin.
+
+    Cobre as formas usadas na prática:
+      - git@github.com:owner/repo(.git)
+      - https://github.com/owner/repo(.git)(/)
+      - https://user:token@github.com/owner/repo.git
+      - ssh://git@github.com(:22)/owner/repo.git
+      - git://github.com/owner/repo.git
+    """
     if not origin_url:
         return None, None
 
-    ssh_match = re.match(
-        r"git@github\.com:(?P<owner>[^/]+)/(?P<repo>.+?)(\.git)?$",
-        origin_url
-    )
-    if ssh_match:
-        return ssh_match.group("owner"), ssh_match.group("repo")
+    url = origin_url.strip()
 
-    https_match = re.match(
-        r"https://github\.com/(?P<owner>[^/]+)/(?P<repo>.+?)(\.git)?$",
-        origin_url
-    )
-    if https_match:
-        return https_match.group("owner"), https_match.group("repo")
+    scp_match = re.match(r"^[\w.+-]+@([\w.-]+):(.+)$", url)
+    if scp_match:
+        host, path = scp_match.group(1), scp_match.group(2)
+    else:
+        proto_match = re.match(r"^(?:ssh|git|https?)://(.+)$", url, re.IGNORECASE)
+        if not proto_match:
+            return None, None
 
-    return None, None
+        rest = proto_match.group(1).split("@", 1)[-1]  # descarta credenciais
+        if "/" not in rest:
+            return None, None
+
+        host, path = rest.split("/", 1)
+        host = host.split(":", 1)[0]  # descarta a porta
+
+    if host.lower() not in _GITHUB_HOSTS:
+        return None, None
+
+    path = path.strip("/")
+    if path.endswith(".git"):
+        path = path[:-4]
+
+    parts = path.split("/")
+    if len(parts) != 2 or not parts[0] or not parts[1]:
+        return None, None
+
+    return parts[0], parts[1]
 
 
 def _get_repo_info(repo_path: str) -> tuple[str, str]:
@@ -67,10 +113,17 @@ def _get_headers(require_token: bool = False) -> dict:
     return headers
 
 
-def list_open_pull_requests(repo_path: str) -> List[Dict[str, Any]]:
+def list_open_pull_requests(repo_path: str, use_cache: bool = True) -> List[Dict[str, Any]]:
     owner, repo = _get_repo_info(repo_path)
-    headers = _get_headers(require_token=False)
+    cache_key = (owner, repo)
+    now = time.monotonic()
 
+    if use_cache:
+        cached = _PR_CACHE.get(cache_key)
+        if cached is not None and now - cached[0] < _PR_CACHE_TTL:
+            return [dict(pr) for pr in cached[1]]
+
+    headers = _get_headers(require_token=False)
     url = f"https://api.github.com/repos/{owner}/{repo}/pulls"
 
     try:
@@ -95,6 +148,7 @@ def list_open_pull_requests(repo_path: str) -> List[Dict[str, Any]]:
                 }
             )
 
+        _PR_CACHE[cache_key] = (now, [dict(pr) for pr in prs])
         return prs
 
     except requests.RequestException as exc:
@@ -144,6 +198,8 @@ def create_pull_request(
         response.raise_for_status()
         pr = response.json()
 
+        invalidate_pull_request_cache(repo_path)
+
         return {
             "number": pr.get("number"),
             "title": pr.get("title", ""),
@@ -183,6 +239,8 @@ def merge_pull_request(
         response = requests.put(url, headers=headers, json=payload, timeout=10)
         response.raise_for_status()
         data = response.json()
+
+        invalidate_pull_request_cache(repo_path)
 
         return {
             "merged": data.get("merged", False),

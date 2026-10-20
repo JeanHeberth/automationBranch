@@ -15,6 +15,7 @@ def get_recent_commit_rows(repo_path: str, branch_name: str, limit: int = 25) ->
             f"-n{limit}",
             "--pretty=format:%h%x01%s%x01%an%x01%P%x01%d",
         ],
+        strip=False,
     )
 
     if not output:
@@ -59,27 +60,35 @@ def get_recent_commit_rows(repo_path: str, branch_name: str, limit: int = 25) ->
     return rows
 
 
+def _parse_status_path(raw: str) -> str:
+    # Formato do "git status --short": "XY <caminho>" (caminho a partir da coluna 3).
+    # Em renomeações vem "R  origem -> destino"; mostramos o destino.
+    file_path = raw[3:].strip() if len(raw) > 3 else raw.strip()
+    if " -> " in file_path:
+        file_path = file_path.split(" -> ", 1)[1]
+    return file_path
+
+
 def get_changed_files(repo_path: str) -> List[str]:
-    output = run_git_command(repo_path, ["status", "--short"])
+    output = run_git_command(repo_path, ["status", "--short"], strip=False)
 
     if not output:
         return []
 
     files = []
     for line in output.splitlines():
-        line = line.rstrip()
-        if not line:
+        if not line.strip():
             continue
 
         status = line[:2]
-        file_path = line[3:].strip() if len(line) > 3 else line.strip()
+        file_path = _parse_status_path(line)
         files.append(f"{status} | {file_path}")
 
     return files
 
 
 def get_changed_files_grouped(repo_path: str) -> Dict[str, List[str]]:
-    output = run_git_command(repo_path, ["status", "--short"])
+    output = run_git_command(repo_path, ["status", "--short"], strip=False)
 
     grouped = {
         "staged": [],
@@ -90,15 +99,15 @@ def get_changed_files_grouped(repo_path: str) -> Dict[str, List[str]]:
         return grouped
 
     for line in output.splitlines():
-        raw = line.rstrip()
-        if not raw:
+        if not line.strip() or len(line) < 3:
             continue
 
-        index_status = raw[0]
-        worktree_status = raw[1]
-        file_path = raw[3:].strip() if len(raw) > 3 else raw.strip()
+        index_status = line[0]
+        worktree_status = line[1]
+        file_path = _parse_status_path(line)
 
-        if index_status != " ":
+        # "?" = arquivo não rastreado: não está em stage, só aparece como unstaged.
+        if index_status not in (" ", "?"):
             grouped["staged"].append(f"{index_status} | {file_path}")
 
         if worktree_status != " ":
