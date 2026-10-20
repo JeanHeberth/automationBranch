@@ -2,8 +2,9 @@ import os
 import threading
 import webbrowser
 import customtkinter as ctk
-from tkinter import filedialog, messagebox, simpledialog, TclError
+from tkinter import filedialog, messagebox, TclError
 
+from ui.dialogs import ask_string
 from ui.top_bar import TopBar
 from ui.left_sidebar import LeftSidebar
 from ui.center_panel import CenterPanel
@@ -530,7 +531,7 @@ class MainWindow(ctk.CTk):
             )
             return
 
-        title = simpledialog.askstring(
+        title = ask_string(
             "Abrir Pull Request",
             "Título do PR:",
             initialvalue=f"{current_branch} -> main"
@@ -538,7 +539,7 @@ class MainWindow(ctk.CTk):
         if not title:
             return
 
-        body = simpledialog.askstring(
+        body = ask_string(
             "Descrição do PR",
             "Descrição do PR (opcional):",
             initialvalue=""
@@ -612,7 +613,7 @@ class MainWindow(ctk.CTk):
                 pr_number = prs[0]["number"]
                 pr_title = prs[0]["title"]
             else:
-                selected = simpledialog.askstring(
+                selected = ask_string(
                     "Merge Pull Request",
                     "Digite o número do PR que deseja mergear:"
                 )
@@ -743,7 +744,7 @@ class MainWindow(ctk.CTk):
 
         try:
             if action_name == "Branch":
-                branch_name = simpledialog.askstring("Criar branch", "Digite o nome da nova branch:")
+                branch_name = ask_string("Criar branch", "Digite o nome da nova branch:")
                 if not branch_name:
                     return
 
@@ -781,6 +782,9 @@ class MainWindow(ctk.CTk):
             elif action_name == "Search":
                 messagebox.showinfo("Search", "Busca ainda será implementada.")
 
+        except ValueError as exc:
+            messagebox.showwarning("Entrada inválida", str(exc))
+            self.set_status(f"Erro ao executar ação: {action_name}")
         except GitServiceError as exc:
             messagebox.showerror("Erro Git", str(exc))
             self.set_status(f"Erro ao executar ação: {action_name}")

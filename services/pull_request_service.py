@@ -29,25 +29,51 @@ def invalidate_pull_request_cache(repo_path: str | None = None) -> None:
     _PR_CACHE.pop(key, None)
 
 
+_GITHUB_HOSTS = {"github.com", "www.github.com"}
+
+
 def _parse_github_repo(origin_url: str) -> tuple[str | None, str | None]:
+    """Extrai (owner, repo) da URL do remote origin.
+
+    Cobre as formas usadas na prática:
+      - git@github.com:owner/repo(.git)
+      - https://github.com/owner/repo(.git)(/)
+      - https://user:token@github.com/owner/repo.git
+      - ssh://git@github.com(:22)/owner/repo.git
+      - git://github.com/owner/repo.git
+    """
     if not origin_url:
         return None, None
 
-    ssh_match = re.match(
-        r"git@github\.com:(?P<owner>[^/]+)/(?P<repo>.+?)(\.git)?$",
-        origin_url
-    )
-    if ssh_match:
-        return ssh_match.group("owner"), ssh_match.group("repo")
+    url = origin_url.strip()
 
-    https_match = re.match(
-        r"https://github\.com/(?P<owner>[^/]+)/(?P<repo>.+?)(\.git)?$",
-        origin_url
-    )
-    if https_match:
-        return https_match.group("owner"), https_match.group("repo")
+    scp_match = re.match(r"^[\w.+-]+@([\w.-]+):(.+)$", url)
+    if scp_match:
+        host, path = scp_match.group(1), scp_match.group(2)
+    else:
+        proto_match = re.match(r"^(?:ssh|git|https?)://(.+)$", url, re.IGNORECASE)
+        if not proto_match:
+            return None, None
 
-    return None, None
+        rest = proto_match.group(1).split("@", 1)[-1]  # descarta credenciais
+        if "/" not in rest:
+            return None, None
+
+        host, path = rest.split("/", 1)
+        host = host.split(":", 1)[0]  # descarta a porta
+
+    if host.lower() not in _GITHUB_HOSTS:
+        return None, None
+
+    path = path.strip("/")
+    if path.endswith(".git"):
+        path = path[:-4]
+
+    parts = path.split("/")
+    if len(parts) != 2 or not parts[0] or not parts[1]:
+        return None, None
+
+    return parts[0], parts[1]
 
 
 def _get_repo_info(repo_path: str) -> tuple[str, str]:

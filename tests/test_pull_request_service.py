@@ -84,8 +84,20 @@ def test_cache_expira_apos_ttl(pr_env, monkeypatch):
         ("https://github.com/owner/repo.git", ("owner", "repo")),
         ("https://github.com/owner/repo", ("owner", "repo")),
         ("https://github.com/owner/repo.name.git", ("owner", "repo.name")),
+        # Formatos que antes quebravam:
+        ("https://github.com/owner/repo/", ("owner", "repo")),
+        ("https://github.com/owner/repo.git/", ("owner", "repo")),
+        ("  https://github.com/owner/repo  ", ("owner", "repo")),
+        ("ssh://git@github.com/owner/repo.git", ("owner", "repo")),
+        ("ssh://git@github.com:22/owner/repo.git", ("owner", "repo")),
+        ("git://github.com/owner/repo.git", ("owner", "repo")),
+        ("https://user:token@github.com/owner/repo.git", ("owner", "repo")),
+        ("https://www.github.com/owner/repo", ("owner", "repo")),
+        # Continuam rejeitados:
         ("", (None, None)),
         ("https://gitlab.com/owner/repo.git", (None, None)),
+        ("git@bitbucket.org:owner/repo.git", (None, None)),
+        ("https://github.com/owner", (None, None)),
     ],
 )
 def test_parse_github_repo(url, esperado):
