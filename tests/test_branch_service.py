@@ -73,3 +73,30 @@ def test_create_branch_nome_vazio(monkeypatch):
     monkeypatch.setattr(branch_service, "run_git_command", lambda *a, **k: "")
     with pytest.raises(ValueError):
         create_branch("/repo", "   ")
+
+
+def test_get_local_and_remote_branches_equivale_as_funcoes_separadas(git_repo):
+    import subprocess
+
+    from services.branch_service import (
+        create_branch,
+        get_local_and_remote_branches,
+        get_local_branches,
+        get_remote_branches,
+    )
+
+    create_branch(git_repo, "x")
+    sha = subprocess.run(
+        ["git", "-C", git_repo, "rev-parse", "HEAD"], capture_output=True, text=True, check=True
+    ).stdout.strip()
+    for ref in ("refs/remotes/origin/main", "refs/remotes/origin/feature/x"):
+        subprocess.run(["git", "-C", git_repo, "update-ref", ref, sha], check=True)
+    subprocess.run(
+        ["git", "-C", git_repo, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"],
+        check=True,
+    )
+
+    local, remote = get_local_and_remote_branches(git_repo)
+
+    assert local == get_local_branches(git_repo)
+    assert remote == get_remote_branches(git_repo) == ["origin/feature/x", "origin/main"]

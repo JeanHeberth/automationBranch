@@ -1,9 +1,14 @@
 import subprocess
+import sys
 
 # Timeout padrão para comandos Git locais (rápidos).
 DEFAULT_TIMEOUT = 30
 # Timeout maior para comandos que acessam a rede (pull, push, ls-remote...).
 NETWORK_TIMEOUT = 180
+
+
+# No Windows, cada subprocess abriria uma janela de console (lento e com "flash" na tela).
+_CREATIONFLAGS = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
 
 
 class GitServiceError(Exception):
@@ -23,6 +28,7 @@ def run_git_command(
             text=True,
             check=True,
             timeout=timeout,
+            creationflags=_CREATIONFLAGS,
         )
     except FileNotFoundError as exc:
         raise GitServiceError(
