@@ -46,3 +46,16 @@ def test_run_git_command_git_ausente(monkeypatch):
 
 def test_network_timeout_maior_que_o_padrao():
     assert git_runner.NETWORK_TIMEOUT > git_runner.DEFAULT_TIMEOUT
+
+
+def test_run_git_command_passa_creationflags(monkeypatch):
+    capturado = {}
+
+    def fake(*a, **k):
+        capturado.update(k)
+        return subprocess.CompletedProcess(args=[], returncode=0, stdout="ok\n", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake)
+    run_git_command("/x", ["status"])
+
+    assert capturado["creationflags"] == git_runner._CREATIONFLAGS

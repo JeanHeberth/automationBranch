@@ -35,6 +35,30 @@ def get_remote_branches(repo_path: str) -> List[str]:
     return branches
 
 
+def get_local_and_remote_branches(repo_path: str) -> tuple[List[str], List[str]]:
+    """Local e remotas num único processo git (equivale a get_local_branches + get_remote_branches)."""
+    output = run_git_command(
+        repo_path,
+        ["for-each-ref", "--format=%(refname)", "refs/heads", "refs/remotes"],
+    )
+
+    local: List[str] = []
+    remote: List[str] = []
+
+    for line in output.splitlines():
+        ref = line.strip()
+        if ref.startswith("refs/heads/"):
+            local.append(ref[len("refs/heads/"):])
+        elif ref.startswith("refs/remotes/"):
+            name = ref[len("refs/remotes/"):]
+            # Ignora o ponteiro simbólico origin/HEAD (mesmo critério de get_remote_branches).
+            if "/" not in name or name.endswith("/HEAD"):
+                continue
+            remote.append(name)
+
+    return local, remote
+
+
 def get_remotes(repo_path: str) -> List[str]:
     output = run_git_command(repo_path, ["remote"])
     if not output:
