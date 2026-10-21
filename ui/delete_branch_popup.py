@@ -19,7 +19,8 @@ class DeleteBranchPopup(ctk.CTkToplevel):
 
         self.title("Deletar Branch")
         # Em telas menores (ex.: notebook) 800px estoura a altura útil e esconde os botões.
-        height = min(800, max(self.winfo_screenheight() - 140, 480))
+        # Desconta barra de título + barra de tarefas/Dock, que o winfo_screenheight não exclui.
+        height = min(800, max(self.winfo_screenheight() - 220, 480))
         self.geometry(f"520x{height}")
         self.resizable(False, False)
         self.configure(fg_color=APP_COLORS["panel"])
@@ -212,6 +213,11 @@ class DeleteBranchPopup(ctk.CTkToplevel):
 
         x = master_x + (master_width - width) // 2
         y = master_y + (master_height - height) // 2
+
+        # Mantém a janela inteira (incluindo rodapé) dentro da área visível da tela.
+        max_y = self.winfo_screenheight() - height - 120
+        x = max(x, 0)
+        y = max(min(y, max_y), 0)
 
         self.geometry(f"{width}x{height}+{x}+{y}")
 
