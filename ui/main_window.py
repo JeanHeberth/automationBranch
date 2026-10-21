@@ -28,7 +28,6 @@ from services.branch_service import (
 from services.branch_delete_service import (
     get_deletable_local_branches,
     get_protected_remote_branches,
-    is_protected,
     get_deletable_remote_branches,
     delete_local_branch,
     delete_remote_branch,
@@ -508,10 +507,10 @@ class MainWindow(ctk.CTk):
         repo_path = self.selected_repo_path
         current_branch = get_current_branch(repo_path)
 
-        if is_protected(current_branch):
+        if current_branch == "main":
             messagebox.showwarning(
                 "Branch inválida",
-                f"Não faz sentido abrir PR a partir da branch protegida {current_branch}."
+                "Não faz sentido abrir PR da branch main para ela mesma."
             )
             return
 
