@@ -1,3 +1,4 @@
+import tkinter as tk
 import weakref
 
 import customtkinter as ctk
@@ -25,9 +26,10 @@ class HoverTooltip:
         self.tip = None
         HoverTooltip._instances.add(self)
 
-        widget.bind("<Enter>", self.show)
-        widget.bind("<Leave>", self.hide)
-        widget.bind("<Motion>", self.move)
+        widget.bind("<Enter>", self.show, add="+")
+        widget.bind("<Leave>", self.hide, add="+")
+        widget.bind("<Motion>", self.move, add="+")
+        widget.bind("<ButtonPress>", self.hide, add="+")
 
     def show(self, event=None):
         text = self.text_getter()
@@ -45,21 +47,23 @@ class HoverTooltip:
         if grab is not None and grab.winfo_toplevel() is not self.widget.winfo_toplevel():
             return
 
-        self.tip = ctk.CTkToplevel(self.widget)
+        # tk.Toplevel/tk.Label puros: CTkToplevel + CTkLabel renderizam o tooltip vazio no
+        # macOS (sem texto) e são lentos para criar/destruir no Windows.
+        self.tip = tk.Toplevel(self.widget)
         self.tip.wm_overrideredirect(True)
         self.tip.attributes("-topmost", True)
+        self.tip.configure(bg=APP_COLORS["border"])
 
-        label = ctk.CTkLabel(
+        label = tk.Label(
             self.tip,
             text=text,
-            text_color=APP_COLORS["text"],
-            fg_color="#111827",
-            corner_radius=8,
+            fg=APP_COLORS["text"],
+            bg="#111827",
+            justify="left",
             padx=10,
             pady=6,
-            justify="left"
         )
-        label.pack()
+        label.pack(padx=1, pady=1)
 
         self.move(event)
 
