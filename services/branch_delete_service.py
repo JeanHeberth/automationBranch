@@ -16,6 +16,17 @@ def filter_deletable(branches: list[str]) -> list[str]:
     return [b for b in branches if b and not is_protected(b)]
 
 
+def get_protected_remote_branches(repo_path: str, exclude: str | None = None) -> list[str]:
+    """Branches protegidas existentes no remote, candidatas a base de um PR.
+
+    Ordena na ordem de PROTECTED_BRANCHES e cai para ["main"] se nenhuma for encontrada.
+    """
+    ordem = ["main", "master", "develop", "developer"]
+    nomes = {b.split("/", 1)[1] for b in get_remote_branches(repo_path) if "/" in b}
+    protegidas = [b for b in ordem if b in nomes and b != exclude]
+    return protegidas or [b for b in ["main"] if b != exclude]
+
+
 def get_deletable_local_branches(repo_path: str) -> list[str]:
     current_branch = get_current_branch(repo_path)
     branches = get_local_branches(repo_path)

@@ -12,6 +12,7 @@ from ui.right_panel import RightPanel
 from ui.profile_popup import ProfileConnectPopup
 from ui.profile_menu import ProfileMenu
 from ui.delete_branch_popup import DeleteBranchPopup
+from ui.base_branch_popup import BaseBranchPopup
 from ui.theme import APP_COLORS
 
 from services.git_runner import GitServiceError
@@ -26,6 +27,8 @@ from services.branch_service import (
 )
 from services.branch_delete_service import (
     get_deletable_local_branches,
+    get_protected_remote_branches,
+    is_protected,
     get_deletable_remote_branches,
     delete_local_branch,
     delete_remote_branch,
@@ -505,10 +508,10 @@ class MainWindow(ctk.CTk):
         repo_path = self.selected_repo_path
         current_branch = get_current_branch(repo_path)
 
-        if current_branch == "main":
+        if is_protected(current_branch):
             messagebox.showwarning(
                 "Branch inválida",
-                "Não faz sentido abrir PR da branch main para ela mesma."
+                f"Não faz sentido abrir PR a partir da branch protegida {current_branch}."
             )
             return
 
@@ -531,10 +534,20 @@ class MainWindow(ctk.CTk):
             )
             return
 
+        try:
+            options = get_protected_remote_branches(repo_path, exclude=current_branch)
+        except GitServiceError as exc:
+            messagebox.showerror("Erro ao listar branches", str(exc))
+            return
+
+        base_branch = BaseBranchPopup(self, options).get_selection()
+        if not base_branch:
+            return
+
         title = ask_string(
             "Abrir Pull Request",
             "Título do PR:",
-            initialvalue=f"{current_branch} -> main"
+            initialvalue=f"{current_branch} -> {base_branch}"
         )
         if not title:
             return
@@ -553,7 +566,7 @@ class MainWindow(ctk.CTk):
                 repo_path,
                 title=title,
                 body=body,
-                base_branch="main",
+                base_branch=base_branch,
                 head_branch=current_branch,
             ),
             self._finish_open_pr,
