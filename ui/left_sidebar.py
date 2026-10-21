@@ -1,15 +1,29 @@
 import sys
+import tkinter as tk
 
 import customtkinter as ctk
 from ui.theme import APP_COLORS
 
 
 class SidebarSection(ctk.CTkFrame):
-    def __init__(self, master, title: str, count: str = "", expanded: bool = True, fonts: dict | None = None):
+    def __init__(
+        self,
+        master,
+        title: str,
+        count: str = "",
+        expanded: bool = True,
+        fonts: dict | None = None,
+        lazy_fill=None,
+        on_toggle=None,
+    ):
         super().__init__(master, fg_color="transparent")
 
         self.expanded = expanded
         self.fonts = fonts or {}
+        # lazy_fill: monta o conteúdo só na primeira vez que a seção é exibida
+        # (evita criar centenas de widgets de uma seção que está recolhida).
+        self._lazy_fill = lazy_fill
+        self._on_toggle = on_toggle
 
         self.header = ctk.CTkFrame(self, fg_color="transparent", height=30)
         self.header.pack(fill="x", padx=0, pady=(0, 3))
@@ -41,19 +55,29 @@ class SidebarSection(ctk.CTkFrame):
 
         self.content = ctk.CTkFrame(self, fg_color="transparent")
         if expanded:
+            self._fill_if_needed()
             self.content.pack(fill="x", padx=0, pady=(0, 6))
 
         for widget in [self.header, self.arrow_label, self.title_label, self.count_label]:
             widget.bind("<Button-1>", self.toggle)
+
+    def _fill_if_needed(self):
+        if self._lazy_fill is not None:
+            fill, self._lazy_fill = self._lazy_fill, None
+            fill(self.content)
 
     def toggle(self, _event=None):
         self.expanded = not self.expanded
         self.arrow_label.configure(text="⌄" if self.expanded else "›")
 
         if self.expanded:
+            self._fill_if_needed()
             self.content.pack(fill="x", padx=0, pady=(0, 6))
         else:
             self.content.pack_forget()
+
+        if self._on_toggle:
+            self._on_toggle(self.expanded)
 
 
 class SidebarItem(ctk.CTkFrame):
@@ -153,6 +177,13 @@ class LeftSidebar(ctk.CTkFrame):
         self.remotes: list[str] = []
         self.pull_requests: list[dict] = []
 
+        # O que está desenhado hoje: permite pular redesenhos idênticos (muito caro no Windows).
+        self._rendered_local: list[str] | None = None
+        self._rendered_remote: tuple | None = None
+        self._rendered_prs: list[dict] | None = None
+        self._remote_expanded = False
+        self._filter_job = None
+
         self.fonts = self._create_fonts()
 
         self._build_header()
@@ -238,6 +269,41 @@ class LeftSidebar(ctk.CTkFrame):
             corner_radius=0
         )
         self.scroll.pack(fill="both", expand=True, padx=0, pady=0)
+        self._build_sections()
+
+    def _new_box(self):
+        box = ctk.CTkFrame(self.scroll, fg_color="transparent")
+        box.pack(fill="x")
+        return box
+
+    def _build_sections(self):
+        """Cria uma vez os contêineres; cada seção dinâmica é redesenhada de forma independente."""
+        self.local_box = self._new_box()
+
+        self._section_divider()
+        self.remote_box = self._new_box()
+
+        self._section_divider()
+        cloud = SidebarSection(self.scroll, "CLOUD PATCHES", "0", expanded=True, fonts=self.fonts)
+        cloud.pack(fill="x", padx=0, pady=(0, 8))
+
+        self._section_divider()
+        self.pr_box = self._new_box()
+
+        self._section_divider()
+        SidebarSection(self.scroll, "ISSUES", "", expanded=False, fonts=self.fonts).pack(
+            fill="x", padx=0, pady=(0, 5)
+        )
+
+        self._section_divider()
+        SidebarSection(self.scroll, "TEAMS", "", expanded=False, fonts=self.fonts).pack(
+            fill="x", padx=0, pady=(0, 5)
+        )
+
+    @staticmethod
+    def _clear_box(box):
+        for widget in box.winfo_children():
+            widget.destroy()
 
     def _build_footer(self):
         divider = ctk.CTkFrame(self, fg_color=APP_COLORS["border"], height=1)
@@ -262,11 +328,6 @@ class LeftSidebar(ctk.CTkFrame):
         )
         self.footer_label.pack(side="left", fill="x", expand=True)
 
-    def _clear_sections(self):
-        for widget in self.scroll.winfo_children():
-            widget.destroy()
-        self.branch_items.clear()
-
     def _section_divider(self):
         ctk.CTkFrame(
             self.scroll,
@@ -275,7 +336,11 @@ class LeftSidebar(ctk.CTkFrame):
         ).pack(fill="x", padx=0, pady=(0, 8))
 
     def _render_local_section(self, branches: list[str]):
-        local = SidebarSection(self.scroll, "LOCAL", str(len(branches)), expanded=True, fonts=self.fonts)
+        self._clear_box(self.local_box)
+        self.branch_items.clear()
+        self._rendered_local = branches[:]
+
+        local = SidebarSection(self.local_box, "LOCAL", str(len(branches)), expanded=True, fonts=self.fonts)
         local.pack(fill="x", padx=0, pady=(3, 8))
 
         if not branches:
@@ -301,12 +366,27 @@ class LeftSidebar(ctk.CTkFrame):
             self.branch_items[branch] = item
 
     def _render_remote_section(self, remote_branches: list[str], remotes: list[str]):
-        remote = SidebarSection(self.scroll, "REMOTE", str(len(remotes)), expanded=True, fonts=self.fonts)
+        self._clear_box(self.remote_box)
+        self._rendered_remote = (tuple(remote_branches), tuple(remotes))
+
+        remote = SidebarSection(
+            self.remote_box,
+            "REMOTE",
+            str(len(remotes)),
+            expanded=self._remote_expanded,
+            fonts=self.fonts,
+            lazy_fill=lambda content: self._fill_remote_section(content, remote_branches, remotes),
+            on_toggle=self._set_remote_expanded,
+        )
         remote.pack(fill="x", padx=0, pady=(0, 8))
 
+    def _set_remote_expanded(self, expanded: bool):
+        self._remote_expanded = expanded
+
+    def _fill_remote_section(self, parent, remote_branches: list[str], remotes: list[str]):
         if not remotes:
             ctk.CTkLabel(
-                remote.content,
+                parent,
                 text="Nenhum remote",
                 text_color=APP_COLORS["muted"],
                 font=self.fonts["item"]
@@ -315,40 +395,44 @@ class LeftSidebar(ctk.CTkFrame):
 
         for remote_name in remotes:
             SidebarItem(
-                remote.content,
+                parent,
                 remote_name,
                 icon="☁",
                 level=0,
                 fonts=self.fonts
             ).pack(fill="x")
 
-            related = []
             prefix = f"{remote_name}/"
-            for branch in remote_branches:
-                if branch.startswith(prefix):
-                    related.append(branch[len(prefix):])
+            related = [b[len(prefix):] for b in remote_branches if b.startswith(prefix)]
 
             if not related:
                 ctk.CTkLabel(
-                    remote.content,
+                    parent,
                     text="Nenhuma branch remota",
                     text_color=APP_COLORS["muted"],
                     font=self.fonts["item"]
                 ).pack(anchor="w", padx=30, pady=(2, 6))
                 continue
 
+            # Uma branch remota é só texto: um tk.Label leve no lugar de 4 widgets do CustomTkinter.
             for branch_name in related:
-                SidebarItem(
-                    remote.content,
-                    branch_name,
-                    icon="⑂",
-                    level=1,
-                    fonts=self.fonts
+                tk.Label(
+                    parent,
+                    text=f"⑂  {branch_name}",
+                    anchor="w",
+                    fg=APP_COLORS["text"],
+                    bg=APP_COLORS["sidebar"],
+                    font=self.fonts["item"],
+                    padx=28,
+                    pady=5,
                 ).pack(fill="x")
 
     def _render_pull_requests_section(self):
+        self._clear_box(self.pr_box)
+        self._rendered_prs = [dict(pr) for pr in self.pull_requests]
+
         prs = SidebarSection(
-            self.scroll,
+            self.pr_box,
             "PULL REQUESTS",
             str(len(self.pull_requests)),
             expanded=True if self.pull_requests else False,
@@ -430,29 +514,9 @@ class LeftSidebar(ctk.CTkFrame):
         if self.on_merge_pr:
             self.on_merge_pr(pr)
 
-    def _build_static_sections(self):
-        self._section_divider()
-        self._render_remote_section(self.remote_branches, self.remotes)
-
-        self._section_divider()
-        cloud = SidebarSection(self.scroll, "CLOUD PATCHES", "0", expanded=True, fonts=self.fonts)
-        cloud.pack(fill="x", padx=0, pady=(0, 8))
-
-        self._section_divider()
-        self._render_pull_requests_section()
-
-        self._section_divider()
-        issues = SidebarSection(self.scroll, "ISSUES", "", expanded=False, fonts=self.fonts)
-        issues.pack(fill="x", padx=0, pady=(0, 5))
-
-        self._section_divider()
-        teams = SidebarSection(self.scroll, "TEAMS", "", expanded=False, fonts=self.fonts)
-        teams.pack(fill="x", padx=0, pady=(0, 5))
-
     def _render_branches(self, branches: list[str]):
-        self._clear_sections()
+        """Redesenha só a seção LOCAL (usada pelo filtro e por mudanças nas branches locais)."""
         self._render_local_section(branches)
-        self._build_static_sections()
         self.set_viewing_count(len(branches))
 
     def _handle_branch_click(self, branch_name: str):
@@ -467,6 +531,13 @@ class LeftSidebar(ctk.CTkFrame):
             self.on_branch_select(branch_name)
 
     def _on_filter_change(self, _event=None):
+        # Espera o usuário parar de digitar antes de redesenhar a lista.
+        if self._filter_job is not None:
+            self.after_cancel(self._filter_job)
+        self._filter_job = self.after(200, self._apply_filter)
+
+    def _apply_filter(self):
+        self._filter_job = None
         term = self.search_entry.get().strip().lower()
 
         if not term:
@@ -484,11 +555,26 @@ class LeftSidebar(ctk.CTkFrame):
         if self.selected_branch not in self.all_branches:
             self.selected_branch = self.all_branches[0] if self.all_branches else ""
 
-        self._render_branches(self.all_branches)
+        # Só redesenha o que mudou (num Refresh sem novidades nada é recriado).
+        if self._rendered_local != self.all_branches:
+            self._render_branches(self.all_branches)
+        else:
+            self.set_selected_branch(self.selected_branch)
+
+        remote_key = (tuple(self.remote_branches), tuple(self.remotes))
+        if self._rendered_remote != remote_key:
+            self._render_remote_section(self.remote_branches, self.remotes)
+
+        if self._rendered_prs is None:
+            self._render_pull_requests_section()
 
     def set_pull_requests(self, pull_requests: list[dict]):
         self.pull_requests = pull_requests[:] if pull_requests else []
-        self._render_branches(self.all_branches)
+
+        if self._rendered_prs == self.pull_requests:
+            return
+
+        self._render_pull_requests_section()
 
     def set_selected_branch(self, branch_name: str):
         self.selected_branch = branch_name

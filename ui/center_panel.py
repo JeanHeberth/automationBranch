@@ -337,6 +337,7 @@ class CenterPanel(ctk.CTkFrame):
         self.scroll.pack(fill="both", expand=True, padx=0, pady=0)
 
     def clear(self):
+        self._rendered_rows_key = None
         for widget in self.scroll.winfo_children():
             widget.destroy()
 
@@ -344,7 +345,14 @@ class CenterPanel(ctk.CTkFrame):
         self.current_branch = branch_name
 
     def set_commit_rows(self, rows: list[dict]):
+        # Mesmos commits na mesma branch: não recria as linhas (cada uma tem um canvas).
+        key = (self.current_branch, rows)
+        if rows and getattr(self, "_rendered_rows_key", None) == key:
+            return
+
         self.clear()
+        if rows:
+            self._rendered_rows_key = key
 
         if not rows:
             self._empty_state("Nenhum commit encontrado.")
