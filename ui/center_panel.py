@@ -1,3 +1,5 @@
+import weakref
+
 import customtkinter as ctk
 from ui.theme import APP_COLORS
 
@@ -15,10 +17,13 @@ GRAPH_COLORS = [
 
 
 class HoverTooltip:
+    _instances: "weakref.WeakSet[HoverTooltip]" = weakref.WeakSet()
+
     def __init__(self, widget, text_getter):
         self.widget = widget
         self.text_getter = text_getter
         self.tip = None
+        HoverTooltip._instances.add(self)
 
         widget.bind("<Enter>", self.show)
         widget.bind("<Leave>", self.hide)
@@ -30,6 +35,14 @@ class HoverTooltip:
             return
 
         if self.tip is not None:
+            return
+
+        # Com um popup modal aberto, o tooltip (topmost) apareceria por cima dele.
+        try:
+            grab = self.widget.grab_current()
+        except Exception:
+            grab = None
+        if grab is not None and grab.winfo_toplevel() is not self.widget.winfo_toplevel():
             return
 
         self.tip = ctk.CTkToplevel(self.widget)
@@ -62,6 +75,15 @@ class HoverTooltip:
         if self.tip is not None:
             self.tip.destroy()
             self.tip = None
+
+    @classmethod
+    def hide_all(cls):
+        """Fecha todos os tooltips visíveis (ex.: ao abrir um popup modal)."""
+        for instance in list(cls._instances):
+            try:
+                instance.hide()
+            except Exception:
+                pass
 
 
 class CommitRow(ctk.CTkFrame):

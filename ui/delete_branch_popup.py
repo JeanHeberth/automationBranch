@@ -1,10 +1,14 @@
 import customtkinter as ctk
+from ui.center_panel import HoverTooltip
 from ui.theme import APP_COLORS
 
 
 class DeleteBranchPopup(ctk.CTkToplevel):
     def __init__(self, master, local_branches: list[str], remote_branches: list[str], on_confirm):
         super().__init__(master)
+
+        # Tooltips da tela de trás são topmost e ficariam por cima do popup.
+        HoverTooltip.hide_all()
 
         self.local_branches = local_branches
         self.remote_branches = remote_branches
