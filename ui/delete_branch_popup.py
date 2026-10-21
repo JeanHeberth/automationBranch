@@ -18,7 +18,9 @@ class DeleteBranchPopup(ctk.CTkToplevel):
         self.filtered_branches: list[str] = []
 
         self.title("Deletar Branch")
-        self.geometry("520x800")
+        # Em telas menores (ex.: notebook) 800px estoura a altura útil e esconde os botões.
+        height = min(800, max(self.winfo_screenheight() - 140, 480))
+        self.geometry(f"520x{height}")
         self.resizable(False, False)
         self.configure(fg_color=APP_COLORS["panel"])
 
@@ -147,7 +149,7 @@ class DeleteBranchPopup(ctk.CTkToplevel):
         self.branch_list.pack(fill="both", expand=True)
 
         helper_frame = ctk.CTkFrame(container, fg_color="#1b2430", corner_radius=10)
-        helper_frame.pack(fill="x", pady=(8, 14))
+        helper_frame.pack(fill="x", side="bottom", pady=(8, 14), before=mode_frame)
 
         ctk.CTkLabel(
             helper_frame,
@@ -166,7 +168,8 @@ class DeleteBranchPopup(ctk.CTkToplevel):
         ).pack(anchor="w", padx=10, pady=(0, 8))
 
         actions = ctk.CTkFrame(container, fg_color="transparent")
-        actions.pack(fill="x", pady=(0, 0))
+        # Rodapé empacotado primeiro (side="bottom") para nunca ser cortado quando a janela é curta.
+        actions.pack(fill="x", side="bottom", pady=(0, 0), before=helper_frame)
 
         cancel_btn = ctk.CTkButton(
             actions,
