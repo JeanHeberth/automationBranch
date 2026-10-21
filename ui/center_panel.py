@@ -287,6 +287,12 @@ class CommitRow(ctk.CTkFrame):
 
 
 class CenterPanel(ctk.CTkFrame):
+    # Linhas de commit criadas por "rodada": entre uma rodada e outra a janela volta a
+    # responder (cada linha tem ~10 widgets, o que no Windows leva dezenas de ms).
+    ROW_BATCH = 6
+
+    _rendered_rows_key = None
+    _render_gen = 0
     def __init__(self, master):
         super().__init__(
             master,
@@ -338,6 +344,7 @@ class CenterPanel(ctk.CTkFrame):
 
     def clear(self):
         self._rendered_rows_key = None
+        self._render_gen += 1  # cancela uma montagem em lotes que ainda esteja em andamento
         for widget in self.scroll.winfo_children():
             widget.destroy()
 
@@ -347,7 +354,7 @@ class CenterPanel(ctk.CTkFrame):
     def set_commit_rows(self, rows: list[dict]):
         # Mesmos commits na mesma branch: não recria as linhas (cada uma tem um canvas).
         key = (self.current_branch, rows)
-        if rows and getattr(self, "_rendered_rows_key", None) == key:
+        if rows and self._rendered_rows_key == key:
             return
 
         self.clear()
@@ -358,7 +365,19 @@ class CenterPanel(ctk.CTkFrame):
             self._empty_state("Nenhum commit encontrado.")
             return
 
-        for index, row_data in enumerate(rows):
+        self._build_rows(rows, 0, self._render_gen)
+
+    def _build_rows(self, rows: list[dict], start: int, generation: int):
+        # Descarta se outra atualização começou (clear/novo set_commit_rows) ou a janela fechou.
+        try:
+            if generation != self._render_gen or not self.winfo_exists():
+                return
+        except Exception:
+            return
+
+        end = min(start + self.ROW_BATCH, len(rows))
+        for index in range(start, end):
+            row_data = rows[index]
             branch_badge = self.current_branch if index == 0 and self.current_branch else ""
 
             row = CommitRow(
@@ -369,6 +388,9 @@ class CenterPanel(ctk.CTkFrame):
                 is_head=(index == 0)
             )
             row.pack(fill="x", padx=8, pady=0)
+
+        if end < len(rows):
+            self.after(1, lambda: self._build_rows(rows, end, generation))
 
     def set_commits(self, commits: list[str]):
         self.clear()
