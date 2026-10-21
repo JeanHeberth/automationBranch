@@ -1,3 +1,5 @@
+import sys
+
 import customtkinter as ctk
 from ui.theme import APP_COLORS
 
@@ -120,6 +122,15 @@ class SidebarItem(ctk.CTkFrame):
         )
 
 
+# Atalho para focar o filtro: ⌘+Option+F no macOS, Ctrl+Alt+F no Windows/Linux.
+if sys.platform == "darwin":
+    FILTER_SHORTCUT_LABEL = "⌘ + Option + f"
+    FILTER_SHORTCUT_SEQUENCE = "<Command-Option-f>"
+else:
+    FILTER_SHORTCUT_LABEL = "Ctrl + Alt + f"
+    FILTER_SHORTCUT_SEQUENCE = "<Control-Alt-f>"
+
+
 class LeftSidebar(ctk.CTkFrame):
     def __init__(self, master, on_branch_select=None, on_open_pr=None, on_merge_pr=None):
         super().__init__(
@@ -149,6 +160,10 @@ class LeftSidebar(ctk.CTkFrame):
         self._build_footer()
 
         self.set_branches([], remote_branches=[], remotes=[])
+
+    def _focus_filter(self, _event=None):
+        self.search_entry.focus_set()
+        return "break"
 
     def _create_fonts(self):
         return {
@@ -189,7 +204,7 @@ class LeftSidebar(ctk.CTkFrame):
 
         self.search_entry = ctk.CTkEntry(
             search_row,
-            placeholder_text="Filter (⌘ + Option + f)",
+            placeholder_text=f"Filter ({FILTER_SHORTCUT_LABEL})",
             height=34,
             corner_radius=8,
             fg_color="#1b1f27",
@@ -199,6 +214,7 @@ class LeftSidebar(ctk.CTkFrame):
         )
         self.search_entry.pack(fill="x", side="left", expand=True)
         self.search_entry.bind("<KeyRelease>", self._on_filter_change)
+        self.winfo_toplevel().bind(FILTER_SHORTCUT_SEQUENCE, self._focus_filter, add="+")
 
         self.search_btn = ctk.CTkButton(
             search_row,
