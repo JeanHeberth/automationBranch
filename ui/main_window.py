@@ -35,6 +35,7 @@ from services.commit_service import (
     stage_all_changes,
     commit_all_changes,
 )
+from services import perf
 from services.repo_snapshot import collect_repo_snapshot
 from services.pull_request_service import (
     list_open_pull_requests,
@@ -76,6 +77,7 @@ class MainWindow(ctk.CTk):
         self._sync_token = 0
 
         self._configure_window_size()
+        perf.start_ui_lag_monitor(self)
         self._configure_grid()
 
         self.top_bar = TopBar(
@@ -360,11 +362,13 @@ class MainWindow(ctk.CTk):
             # Descarta o resultado se a janela fechou ou o repositório mudou.
             if not self.winfo_exists() or self.selected_repo_path != repo_path:
                 return
-            self.left_sidebar.set_pull_requests(prs)
+            with perf.timed(f"UI: left_sidebar.set_pull_requests ({len(prs)} PRs, re-render da sidebar)"):
+                self.left_sidebar.set_pull_requests(prs)
 
         def runner():
             try:
-                prs = list_open_pull_requests(repo_path)
+                with perf.timed("API GitHub: list_open_pull_requests"):
+                    prs = list_open_pull_requests(repo_path)
             except Exception:
                 self._safe_after(lambda: apply([]))
             else:
@@ -386,6 +390,7 @@ class MainWindow(ctk.CTk):
         self._sync_token += 1
         token = self._sync_token
         self.set_status("Atualizando dados do repositório...")
+        perf.log(f"--- sync_branch_ui iniciado (token {token}) ---")
 
         def apply(snapshot):
             # Descarta resultado de uma atualização antiga, de outro repositório ou de janela fechada.
@@ -416,37 +421,43 @@ class MainWindow(ctk.CTk):
     def _apply_snapshot(self, snapshot):
         branch_name = snapshot.branch
 
-        self.is_updating_branch_ui = True
-        try:
-            self.top_bar.set_branches(snapshot.local_branches, current_branch=branch_name)
-            self.top_bar.set_selected_branch(branch_name)
+        with perf.timed("UI: _apply_snapshot (total, thread da UI)"):
+            self.is_updating_branch_ui = True
+            try:
+                with perf.timed("UI: top_bar.set_branches"):
+                    self.top_bar.set_branches(snapshot.local_branches, current_branch=branch_name)
+                    self.top_bar.set_selected_branch(branch_name)
 
-            self.left_sidebar.set_branches(
-                snapshot.local_branches,
-                remote_branches=snapshot.remote_branches,
-                remotes=snapshot.remotes
-            )
-            self.left_sidebar.set_selected_branch(branch_name)
-            self.left_sidebar.set_footer_message(f"Branch atual: {branch_name}")
-            self.left_sidebar.set_viewing_count(len(snapshot.local_branches))
-        finally:
-            self.is_updating_branch_ui = False
+                with perf.timed(f"UI: left_sidebar.set_branches ({len(snapshot.local_branches)} locais, "
+                                f"{len(snapshot.remote_branches)} remotas)"):
+                    self.left_sidebar.set_branches(
+                        snapshot.local_branches,
+                        remote_branches=snapshot.remote_branches,
+                        remotes=snapshot.remotes
+                    )
+                self.left_sidebar.set_selected_branch(branch_name)
+                self.left_sidebar.set_footer_message(f"Branch atual: {branch_name}")
+                self.left_sidebar.set_viewing_count(len(snapshot.local_branches))
+            finally:
+                self.is_updating_branch_ui = False
 
-        self.center_panel.set_current_branch(branch_name)
-        if snapshot.commit_error:
-            self.center_panel.set_commits(["Erro ao carregar commits.", snapshot.commit_error])
-        else:
-            self.center_panel.set_commit_rows(snapshot.commit_rows)
+            with perf.timed(f"UI: center_panel commits ({len(snapshot.commit_rows)} linhas)"):
+                self.center_panel.set_current_branch(branch_name)
+                if snapshot.commit_error:
+                    self.center_panel.set_commits(["Erro ao carregar commits.", snapshot.commit_error])
+                else:
+                    self.center_panel.set_commit_rows(snapshot.commit_rows)
 
-        if snapshot.changed_files_error:
-            self.right_panel.set_files_grouped([f"Erro: {snapshot.changed_files_error}"], [])
-        else:
-            self.right_panel.set_files_grouped(
-                snapshot.changed_files.get("staged", []),
-                snapshot.changed_files.get("unstaged", [])
-            )
+            with perf.timed("UI: right_panel arquivos alterados"):
+                if snapshot.changed_files_error:
+                    self.right_panel.set_files_grouped([f"Erro: {snapshot.changed_files_error}"], [])
+                else:
+                    self.right_panel.set_files_grouped(
+                        snapshot.changed_files.get("staged", []),
+                        snapshot.changed_files.get("unstaged", [])
+                    )
 
-        self.load_pull_requests()
+            self.load_pull_requests()
 
     def perform_branch_checkout(self, branch_name: str):
         if not self.selected_repo_path:

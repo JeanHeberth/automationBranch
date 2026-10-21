@@ -9,6 +9,7 @@ from services.branch_service import (
 )
 from services.commit_service import get_changed_files_grouped, get_recent_commit_rows
 from services.git_runner import GitServiceError
+from services.perf import timed
 
 
 @dataclass
@@ -34,7 +35,7 @@ def collect_repo_snapshot(
     passa a ser o do mais lento. Pode ser chamada fora da thread da UI.
     Erros de branches/remotes propagam; erros de commits/arquivos viram texto no snapshot.
     """
-    with ThreadPoolExecutor(max_workers=4) as pool:
+    with timed("collect_repo_snapshot (total, comandos em paralelo)"), ThreadPoolExecutor(max_workers=4) as pool:
         branch_future = pool.submit(get_current_branch, repo_path) if branch_name is None else None
         branches_future = pool.submit(get_local_and_remote_branches, repo_path)
         remotes_future = pool.submit(get_remotes, repo_path)

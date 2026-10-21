@@ -1,6 +1,8 @@
 import subprocess
 import sys
 
+from services.perf import timed
+
 # Timeout padrão para comandos Git locais (rápidos).
 DEFAULT_TIMEOUT = 30
 # Timeout maior para comandos que acessam a rede (pull, push, ls-remote...).
@@ -22,14 +24,15 @@ def run_git_command(
     timeout: float | None = DEFAULT_TIMEOUT,
 ) -> str:
     try:
-        result = subprocess.run(
-            ["git", "-C", repo_path, *args],
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=timeout,
-            creationflags=_CREATIONFLAGS,
-        )
+        with timed(f"git {' '.join(args[:3])}"):
+            result = subprocess.run(
+                ["git", "-C", repo_path, *args],
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=timeout,
+                creationflags=_CREATIONFLAGS,
+            )
     except FileNotFoundError as exc:
         raise GitServiceError(
             "Git não encontrado. Verifique se o Git está instalado e disponível no PATH."
