@@ -1,6 +1,7 @@
 import os
 import threading
 import webbrowser
+from concurrent.futures import ThreadPoolExecutor
 import customtkinter as ctk
 from tkinter import filedialog, messagebox, TclError
 
@@ -215,18 +216,31 @@ class MainWindow(ctk.CTk):
             )
             return
 
-        try:
-            local_branches = get_deletable_local_branches(self.selected_repo_path)
-            remote_branches = get_deletable_remote_branches(self.selected_repo_path)
+        repo_path = self.selected_repo_path
 
+        def work():
+            # As duas consultas são independentes: rodam juntas (cada uma abre processos git).
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                local = pool.submit(get_deletable_local_branches, repo_path)
+                remote = pool.submit(get_deletable_remote_branches, repo_path)
+                return local.result(), remote.result()
+
+        def show_popup(branches):
+            local_branches, remote_branches = branches
             DeleteBranchPopup(
                 self,
                 local_branches=local_branches,
                 remote_branches=remote_branches,
                 on_confirm=self._execute_delete_branch
             )
-        except Exception as exc:
-            messagebox.showerror("Erro ao abrir popup", str(exc))
+
+        self._run_in_background(
+            work,
+            show_popup,
+            busy_message="Carregando branches...",
+            error_title="Erro ao abrir popup",
+            error_status="Falha ao carregar branches.",
+        )
 
     def _execute_delete_branch(self, mode: str, location: str, branch_name: str):
         if not self.selected_repo_path:
@@ -236,48 +250,58 @@ class MainWindow(ctk.CTk):
             )
             return False
 
-        try:
+        repo_path = self.selected_repo_path
+
+        def work():
+            """Roda em background e devolve (título, mensagem, status) para a UI exibir."""
             if mode == "specific":
                 if not branch_name or branch_name == "Nenhuma branch disponível":
                     raise GitServiceError("Selecione uma branch válida.")
 
                 if location == "local":
-                    result = delete_local_branch(self.selected_repo_path, branch_name)
-                    messagebox.showinfo(
+                    result = delete_local_branch(repo_path, branch_name)
+                    return (
                         "Branch deletada",
-                        result or f"Branch local '{branch_name}' deletada com sucesso."
+                        result or f"Branch local '{branch_name}' deletada com sucesso.",
+                        f"Branch local deletada com sucesso: {branch_name}",
                     )
-                    self.set_status(f"Branch local deletada com sucesso: {branch_name}")
-                else:
-                    result = delete_remote_branch(self.selected_repo_path, branch_name)
-                    messagebox.showinfo(
-                        "Branch deletada",
-                        result or f"Branch remota '{branch_name}' deletada com sucesso."
-                    )
-                    self.set_status(f"Branch remota deletada com sucesso: {branch_name}")
-            else:
-                if location == "local":
-                    results = delete_all_local(self.selected_repo_path)
-                    messagebox.showinfo(
-                        "Branches deletadas",
-                        "\n".join(results) if results else "Nenhuma branch local disponível para deleção."
-                    )
-                    self.set_status("Deleção em massa local concluída com sucesso.")
-                else:
-                    results = delete_all_remote(self.selected_repo_path)
-                    messagebox.showinfo(
-                        "Branches deletadas",
-                        "\n".join(results) if results else "Nenhuma branch remota disponível para deleção."
-                    )
-                    self.set_status("Deleção em massa remota concluída com sucesso.")
 
+                result = delete_remote_branch(repo_path, branch_name)
+                return (
+                    "Branch deletada",
+                    result or f"Branch remota '{branch_name}' deletada com sucesso.",
+                    f"Branch remota deletada com sucesso: {branch_name}",
+                )
+
+            if location == "local":
+                results = delete_all_local(repo_path)
+                return (
+                    "Branches deletadas",
+                    "\n".join(results) if results else "Nenhuma branch local disponível para deleção.",
+                    "Deleção em massa local concluída com sucesso.",
+                )
+
+            results = delete_all_remote(repo_path)
+            return (
+                "Branches deletadas",
+                "\n".join(results) if results else "Nenhuma branch remota disponível para deleção.",
+                "Deleção em massa remota concluída com sucesso.",
+            )
+
+        def done(outcome):
+            title, message, status = outcome
             self.sync_branch_ui()
-            return True
+            self.set_status(status)
+            messagebox.showinfo(title, message)
 
-        except Exception as exc:
-            messagebox.showerror("Erro ao deletar branch", str(exc))
-            self.set_status("Falha ao deletar branch.")
-            return False
+        self._run_in_background(
+            work,
+            done,
+            busy_message="Deletando branch...",
+            error_title="Erro ao deletar branch",
+            error_status="Falha ao deletar branch.",
+        )
+        return True
 
     def set_status(self, text: str):
         self.status_label.configure(text=text)
@@ -777,32 +801,53 @@ class MainWindow(ctk.CTk):
             )
             return
 
-        try:
-            if action_name == "Branch":
-                branch_name = ask_string("Criar branch", "Digite o nome da nova branch:")
-                if not branch_name:
-                    return
+        if action_name == "Branch":
+            branch_name = (ask_string("Criar branch", "Digite o nome da nova branch:") or "").strip()
+            if not branch_name:
+                return
 
-                result = create_branch(self.selected_repo_path, branch_name.strip())
-                current_branch = get_current_branch(self.selected_repo_path)
+            repo_path = self.selected_repo_path
+
+            def create():
+                result = create_branch(repo_path, branch_name)
+                return result, get_current_branch(repo_path)
+
+            def created(outcome):
+                result, current_branch = outcome
                 self.sync_branch_ui(current_branch)
-
                 self.set_status(f"Branch criada com sucesso: {current_branch}")
                 messagebox.showinfo("Nova branch", result or f"Branch '{current_branch}' criada com sucesso.")
 
-            elif action_name == "Stash":
-                result = git_stash(self.selected_repo_path)
-                self.sync_branch_ui()
-                self.set_status("Stash executado com sucesso.")
-                messagebox.showinfo("Stash", result or "Stash executado com sucesso.")
+            self._run_in_background(
+                create,
+                created,
+                busy_message="Criando branch...",
+                error_title="Erro Git",
+                error_status="Erro ao executar ação: Branch",
+            )
+            return
 
-            elif action_name == "Pop":
-                result = git_stash_pop(self.selected_repo_path)
-                self.sync_branch_ui()
-                self.set_status("Stash pop executado com sucesso.")
-                messagebox.showinfo("Pop", result or "Stash pop executado com sucesso.")
+        if action_name in {"Stash", "Pop"}:
+            repo_path = self.selected_repo_path
+            is_stash = action_name == "Stash"
+            success = "Stash executado com sucesso." if is_stash else "Stash pop executado com sucesso."
 
-            elif action_name == "Refresh":
+            def stashed(result):
+                self.sync_branch_ui()
+                self.set_status(success)
+                messagebox.showinfo(action_name, result or success)
+
+            self._run_in_background(
+                (lambda: git_stash(repo_path)) if is_stash else (lambda: git_stash_pop(repo_path)),
+                stashed,
+                busy_message="Executando stash..." if is_stash else "Executando stash pop...",
+                error_title="Erro Git",
+                error_status=f"Erro ao executar ação: {action_name}",
+            )
+            return
+
+        try:
+            if action_name == "Refresh":
                 self.sync_branch_ui()
                 self.set_status("Dados atualizados com sucesso.")
                 messagebox.showinfo("Refresh", "Dados atualizados com sucesso.")
