@@ -467,16 +467,25 @@ class MainWindow(ctk.CTk):
             )
             return
 
-        try:
-            checkout_branch(self.selected_repo_path, branch_name)
-            current_branch = get_current_branch(self.selected_repo_path)
+        repo_path = self.selected_repo_path
 
+        def work():
+            checkout_branch(repo_path, branch_name)
+            return get_current_branch(repo_path)
+
+        def done(current_branch):
             self.sync_branch_ui(current_branch)
             self.set_status(f"Checkout realizado com sucesso para: {current_branch}")
 
-        except GitServiceError as exc:
-            messagebox.showerror("Erro no checkout", str(exc))
-            self.set_status(f"Falha ao trocar para a branch: {branch_name}")
+        # O checkout e a consulta da branch atual são processos git (lentos no Windows):
+        # rodam em segundo plano para não travar a janela.
+        self._run_in_background(
+            work,
+            done,
+            busy_message=f"Trocando para a branch {branch_name}...",
+            error_title="Erro no checkout",
+            error_status=f"Falha ao trocar para a branch: {branch_name}",
+        )
 
     def handle_commit(self):
         if not self.selected_repo_path:
