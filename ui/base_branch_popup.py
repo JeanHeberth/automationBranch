@@ -20,7 +20,7 @@ class BaseBranchPopup(ctk.CTkToplevel):
         self.transient(master)
         self._build_ui()
         self._center(master)
-        self.grab_set()
+        self.after(150, self.grab_set)
         self.protocol("WM_DELETE_WINDOW", self.destroy)
 
     def _build_ui(self):

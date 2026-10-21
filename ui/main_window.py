@@ -4,7 +4,7 @@ import webbrowser
 import customtkinter as ctk
 from tkinter import filedialog, messagebox, TclError
 
-from ui.dialogs import ask_string
+from ui.dialogs import ask_string, ask_text
 from ui.top_bar import TopBar
 from ui.left_sidebar import LeftSidebar
 from ui.center_panel import CenterPanel
@@ -552,10 +552,10 @@ class MainWindow(ctk.CTk):
         if not title:
             return
 
-        body = ask_string(
+        body = ask_text(
+            self,
             "Descrição do PR",
             "Descrição do PR (opcional):",
-            initialvalue=""
         )
         if body is None:
             body = ""
