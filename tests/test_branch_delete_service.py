@@ -36,3 +36,20 @@ def test_get_deletable_remote_branches(monkeypatch):
     )
 
     assert get_deletable_remote_branches("/repo") == ["feature/x"]
+
+
+def test_get_protected_remote_branches_ordena_e_exclui(monkeypatch):
+    monkeypatch.setattr(
+        branch_delete_service,
+        "get_remote_branches",
+        lambda repo: ["origin/develop", "origin/feature/x", "origin/main", "origin/master"],
+    )
+
+    assert branch_delete_service.get_protected_remote_branches("/repo") == ["main", "master", "develop"]
+    assert branch_delete_service.get_protected_remote_branches("/repo", exclude="main") == ["master", "develop"]
+
+
+def test_get_protected_remote_branches_fallback_main(monkeypatch):
+    monkeypatch.setattr(branch_delete_service, "get_remote_branches", lambda repo: ["origin/feature/x"])
+
+    assert branch_delete_service.get_protected_remote_branches("/repo") == ["main"]
