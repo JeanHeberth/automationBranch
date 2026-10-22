@@ -35,7 +35,10 @@ from services.branch_delete_service import (
 from services.commit_service import (
     stage_all_changes,
     commit_all_changes,
+    amend_commit,
+    is_last_commit_pushed,
 )
+from services.branch_delete_service import is_protected
 from services import perf
 from services.repo_snapshot import collect_repo_snapshot
 from services.pull_request_service import (
@@ -47,6 +50,7 @@ from services.pull_request_service import (
 from services.sync_service import (
     git_pull,
     git_push,
+    git_push_force_with_lease,
     git_stash,
     git_stash_pop,
 )
@@ -104,6 +108,7 @@ class MainWindow(ctk.CTk):
         self.right_panel = RightPanel(self)
         self.right_panel.grid(row=1, column=2, sticky="nsew")
         self.right_panel.set_on_commit(self.handle_commit)
+        self.right_panel.set_on_amend(self.handle_amend)
 
         self.status_label = ctk.CTkLabel(
             self,
@@ -542,6 +547,81 @@ class MainWindow(ctk.CTk):
         except GitServiceError as exc:
             messagebox.showerror("Erro no commit", str(exc))
             self.set_status("Falha ao executar commit.")
+
+    def handle_amend(self):
+        if not self.selected_repo_path:
+            messagebox.showwarning(
+                "Repositório não selecionado",
+                "Selecione um repositório antes de fazer amend."
+            )
+            return
+
+        repo_path = self.selected_repo_path
+        commit_message = self.right_panel.get_commit_message()
+
+        def prepare():
+            branch = get_current_branch(repo_path)
+            if is_protected(branch):
+                return branch, False
+            return branch, is_last_commit_pushed(repo_path, branch)
+
+        def after_prepare(info):
+            branch, pushed = info
+
+            if is_protected(branch):
+                messagebox.showwarning(
+                    "Amend bloqueado",
+                    f"Não é permitido reescrever commits da branch protegida '{branch}'."
+                )
+                self.set_status("Amend bloqueado em branch protegida.")
+                return
+
+            if pushed and not messagebox.askyesno(
+                "Commit já enviado",
+                "O último commit já foi enviado ao remoto.\n"
+                "O amend reescreve o histórico e exigirá um force push "
+                "(--force-with-lease).\n\nDeseja continuar?"
+            ):
+                self.set_status("Amend cancelado.")
+                return
+
+            self._run_in_background(
+                lambda: amend_commit(repo_path, commit_message),
+                lambda result: self._finish_amend(result, pushed),
+                busy_message="Executando amend...",
+                error_title="Erro no amend",
+                error_status="Falha ao executar amend.",
+            )
+
+        self._run_in_background(
+            prepare,
+            after_prepare,
+            busy_message="Verificando último commit...",
+            error_title="Erro no amend",
+            error_status="Falha ao executar amend.",
+        )
+
+    def _finish_amend(self, result, pushed: bool):
+        self.sync_branch_ui()
+        self.right_panel.clear_commit_message()
+        self.set_status("Amend realizado com sucesso.")
+        messagebox.showinfo("Amend", result or "Amend realizado com sucesso.")
+
+        if pushed and messagebox.askyesno(
+            "Enviar ao remoto",
+            "Deseja enviar agora com force push (--force-with-lease)?"
+        ):
+            repo_path = self.selected_repo_path
+            self._run_in_background(
+                lambda: git_push_force_with_lease(repo_path),
+                lambda res: self._finish_git_action(
+                    res, "Force push executado com sucesso.", "Force push",
+                    "Force push executado com sucesso."
+                ),
+                busy_message="Executando force push...",
+                error_title="Erro Git",
+                error_status="Erro ao executar force push.",
+            )
 
     def _handle_open_pr(self):
         if not self.selected_repo_path:

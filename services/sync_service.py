@@ -44,6 +44,17 @@ def git_push(repo_path: str) -> str:
     )
 
 
+def git_push_force_with_lease(repo_path: str) -> str:
+    """Push forçado seguro (recusa se o remoto tiver commits que não conhecemos)."""
+    current_branch = get_current_branch(repo_path)
+
+    return run_git_command(
+        repo_path,
+        ["push", "--force-with-lease", "origin", current_branch],
+        timeout=NETWORK_TIMEOUT,
+    )
+
+
 def git_stash(repo_path: str) -> str:
     return run_git_command(repo_path, ["stash"])
 
