@@ -128,8 +128,13 @@ class RightPanel(ctk.CTkFrame):
         self.commit_msg.bind("<FocusIn>", self._handle_commit_focus_in)
         self.commit_msg.bind("<FocusOut>", self._handle_commit_focus_out)
 
+        buttons_row = ctk.CTkFrame(commit_container, fg_color="transparent")
+        buttons_row.pack(fill="x")
+        buttons_row.grid_columnconfigure(0, weight=3)
+        buttons_row.grid_columnconfigure(1, weight=1)
+
         self.commit_btn = ctk.CTkButton(
-            commit_container,
+            buttons_row,
             text="Commit",
             height=36,
             fg_color=APP_COLORS["accent"],
@@ -138,7 +143,19 @@ class RightPanel(ctk.CTkFrame):
             corner_radius=8,
             font=ctk.CTkFont(size=12, weight="bold")
         )
-        self.commit_btn.pack(fill="x")
+        self.commit_btn.grid(row=0, column=0, sticky="ew", padx=(0, 4))
+
+        self.amend_btn = ctk.CTkButton(
+            buttons_row,
+            text="Amend",
+            height=36,
+            fg_color="#334155",
+            hover_color="#475569",
+            text_color="#ffffff",
+            corner_radius=8,
+            font=ctk.CTkFont(size=12, weight="bold")
+        )
+        self.amend_btn.grid(row=0, column=1, sticky="ew")
 
     def _handle_commit_focus_in(self, _event=None):
         if self.is_placeholder_active:
@@ -182,3 +199,6 @@ class RightPanel(ctk.CTkFrame):
 
     def set_on_commit(self, callback):
         self.commit_btn.configure(command=callback)
+
+    def set_on_amend(self, callback):
+        self.amend_btn.configure(command=callback)
