@@ -1,6 +1,7 @@
 import re
 from typing import List, Dict, Any
 
+from services.branch_service import has_upstream
 from services.git_runner import run_git_command, GitServiceError
 
 
@@ -127,3 +128,26 @@ def commit_all_changes(repo_path: str, message: str) -> str:
         raise GitServiceError("A mensagem de commit não pode estar vazia.")
 
     return run_git_command(repo_path, ["commit", "-m", clean_message])
+
+
+def is_last_commit_pushed(repo_path: str, branch_name: str) -> bool:
+    """True se o último commit já existe no upstream (amend exigirá force push)."""
+    if not has_upstream(repo_path, branch_name):
+        return False
+
+    ahead = run_git_command(repo_path, ["rev-list", "--count", "@{u}..HEAD"])
+    return ahead.strip() == "0"
+
+
+def amend_commit(repo_path: str, message: str | None = None) -> str:
+    """Inclui as alterações atuais no último commit.
+
+    Sem mensagem, mantém a mensagem original (`--no-edit`).
+    """
+    stage_all_changes(repo_path)
+
+    clean_message = (message or "").strip()
+    if clean_message:
+        return run_git_command(repo_path, ["commit", "--amend", "-m", clean_message])
+
+    return run_git_command(repo_path, ["commit", "--amend", "--no-edit"])

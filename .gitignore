@@ -68,3 +68,10 @@ assets/tmp/
 # ========================
 node_modules/
 
+
+# ========================
+# Capturas de tela / imagens de debug
+# ========================
+images/
+automation_perf.log
+logsWindows/

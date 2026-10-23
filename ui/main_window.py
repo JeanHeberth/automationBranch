@@ -1,6 +1,7 @@
 import os
 import threading
 import webbrowser
+from concurrent.futures import ThreadPoolExecutor
 import customtkinter as ctk
 from tkinter import filedialog, messagebox, TclError
 
@@ -18,9 +19,6 @@ from ui.theme import APP_COLORS
 from services.git_runner import GitServiceError
 from services.branch_service import (
     is_git_repository,
-    get_local_branches,
-    get_remote_branches,
-    get_remotes,
     get_current_branch,
     checkout_branch,
     create_branch,
@@ -35,11 +33,14 @@ from services.branch_delete_service import (
     delete_all_remote,
 )
 from services.commit_service import (
-    get_recent_commit_rows,
-    get_changed_files_grouped,
     stage_all_changes,
     commit_all_changes,
+    amend_commit,
+    is_last_commit_pushed,
 )
+from services.branch_delete_service import is_protected
+from services import perf
+from services.repo_snapshot import collect_repo_snapshot
 from services.pull_request_service import (
     list_open_pull_requests,
     create_pull_request,
@@ -49,6 +50,7 @@ from services.pull_request_service import (
 from services.sync_service import (
     git_pull,
     git_push,
+    git_push_force_with_lease,
     git_stash,
     git_stash_pop,
 )
@@ -76,8 +78,11 @@ class MainWindow(ctk.CTk):
         self.profile_menu_popup = None
         # Evita disparar duas operações Git de rede ao mesmo tempo.
         self._bg_busy = False
+        # Identifica a atualização mais recente da UI (descarta resultados atrasados).
+        self._sync_token = 0
 
         self._configure_window_size()
+        perf.start_ui_lag_monitor(self)
         self._configure_grid()
 
         self.top_bar = TopBar(
@@ -103,6 +108,7 @@ class MainWindow(ctk.CTk):
         self.right_panel = RightPanel(self)
         self.right_panel.grid(row=1, column=2, sticky="nsew")
         self.right_panel.set_on_commit(self.handle_commit)
+        self.right_panel.set_on_amend(self.handle_amend)
 
         self.status_label = ctk.CTkLabel(
             self,
@@ -215,18 +221,31 @@ class MainWindow(ctk.CTk):
             )
             return
 
-        try:
-            local_branches = get_deletable_local_branches(self.selected_repo_path)
-            remote_branches = get_deletable_remote_branches(self.selected_repo_path)
+        repo_path = self.selected_repo_path
 
+        def work():
+            # As duas consultas são independentes: rodam juntas (cada uma abre processos git).
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                local = pool.submit(get_deletable_local_branches, repo_path)
+                remote = pool.submit(get_deletable_remote_branches, repo_path)
+                return local.result(), remote.result()
+
+        def show_popup(branches):
+            local_branches, remote_branches = branches
             DeleteBranchPopup(
                 self,
                 local_branches=local_branches,
                 remote_branches=remote_branches,
                 on_confirm=self._execute_delete_branch
             )
-        except Exception as exc:
-            messagebox.showerror("Erro ao abrir popup", str(exc))
+
+        self._run_in_background(
+            work,
+            show_popup,
+            busy_message="Carregando branches...",
+            error_title="Erro ao abrir popup",
+            error_status="Falha ao carregar branches.",
+        )
 
     def _execute_delete_branch(self, mode: str, location: str, branch_name: str):
         if not self.selected_repo_path:
@@ -236,49 +255,58 @@ class MainWindow(ctk.CTk):
             )
             return False
 
-        try:
+        repo_path = self.selected_repo_path
+
+        def work():
+            """Roda em background e devolve (título, mensagem, status) para a UI exibir."""
             if mode == "specific":
                 if not branch_name or branch_name == "Nenhuma branch disponível":
                     raise GitServiceError("Selecione uma branch válida.")
 
                 if location == "local":
-                    result = delete_local_branch(self.selected_repo_path, branch_name)
-                    messagebox.showinfo(
+                    result = delete_local_branch(repo_path, branch_name)
+                    return (
                         "Branch deletada",
-                        result or f"Branch local '{branch_name}' deletada com sucesso."
+                        result or f"Branch local '{branch_name}' deletada com sucesso.",
+                        f"Branch local deletada com sucesso: {branch_name}",
                     )
-                    self.set_status(f"Branch local deletada com sucesso: {branch_name}")
-                else:
-                    result = delete_remote_branch(self.selected_repo_path, branch_name)
-                    messagebox.showinfo(
-                        "Branch deletada",
-                        result or f"Branch remota '{branch_name}' deletada com sucesso."
-                    )
-                    self.set_status(f"Branch remota deletada com sucesso: {branch_name}")
-            else:
-                if location == "local":
-                    results = delete_all_local(self.selected_repo_path)
-                    messagebox.showinfo(
-                        "Branches deletadas",
-                        "\n".join(results) if results else "Nenhuma branch local disponível para deleção."
-                    )
-                    self.set_status("Deleção em massa local concluída com sucesso.")
-                else:
-                    results = delete_all_remote(self.selected_repo_path)
-                    messagebox.showinfo(
-                        "Branches deletadas",
-                        "\n".join(results) if results else "Nenhuma branch remota disponível para deleção."
-                    )
-                    self.set_status("Deleção em massa remota concluída com sucesso.")
 
-            current_branch = get_current_branch(self.selected_repo_path)
-            self.sync_branch_ui(current_branch)
-            return True
+                result = delete_remote_branch(repo_path, branch_name)
+                return (
+                    "Branch deletada",
+                    result or f"Branch remota '{branch_name}' deletada com sucesso.",
+                    f"Branch remota deletada com sucesso: {branch_name}",
+                )
 
-        except Exception as exc:
-            messagebox.showerror("Erro ao deletar branch", str(exc))
-            self.set_status("Falha ao deletar branch.")
-            return False
+            if location == "local":
+                results = delete_all_local(repo_path)
+                return (
+                    "Branches deletadas",
+                    "\n".join(results) if results else "Nenhuma branch local disponível para deleção.",
+                    "Deleção em massa local concluída com sucesso.",
+                )
+
+            results = delete_all_remote(repo_path)
+            return (
+                "Branches deletadas",
+                "\n".join(results) if results else "Nenhuma branch remota disponível para deleção.",
+                "Deleção em massa remota concluída com sucesso.",
+            )
+
+        def done(outcome):
+            title, message, status = outcome
+            self.sync_branch_ui()
+            self.set_status(status)
+            messagebox.showinfo(title, message)
+
+        self._run_in_background(
+            work,
+            done,
+            busy_message="Deletando branch...",
+            error_title="Erro ao deletar branch",
+            error_status="Falha ao deletar branch.",
+        )
+        return True
 
     def set_status(self, text: str):
         self.status_label.configure(text=text)
@@ -338,60 +366,18 @@ class MainWindow(ctk.CTk):
             pass
 
     def _finish_git_action(self, result, success_status: str, dialog_title: str, default_msg: str):
-        current_branch = get_current_branch(self.selected_repo_path)
-        self.sync_branch_ui(current_branch)
+        self.sync_branch_ui()
         self.set_status(success_status)
         messagebox.showinfo(dialog_title, result or default_msg)
 
     def _finish_merge(self, result: dict, pr_number: int):
         self.load_pull_requests()
-        current_branch = get_current_branch(self.selected_repo_path)
-        self.sync_branch_ui(current_branch)
+        self.sync_branch_ui()
         self.set_status(f"PR #{pr_number} mergeado com sucesso.")
         messagebox.showinfo(
             "Merge realizado",
             result.get("message", f"PR #{pr_number} mergeado com sucesso.")
         )
-
-    def load_commits_for_branch(self, branch_name: str):
-        if not self.selected_repo_path:
-            self.center_panel.set_current_branch("")
-            self.center_panel.set_commit_rows([])
-            return
-
-        try:
-            rows = get_recent_commit_rows(self.selected_repo_path, branch_name, limit=25)
-            self.center_panel.set_current_branch(branch_name)
-
-            if not rows:
-                self.center_panel.set_commit_rows([])
-            else:
-                self.center_panel.set_commit_rows(rows)
-
-        except GitServiceError as exc:
-            self.center_panel.set_current_branch(branch_name)
-            self.center_panel.set_commits([
-                "Erro ao carregar commits.",
-                str(exc)
-            ])
-
-    def load_changed_files(self):
-        if not self.selected_repo_path:
-            self.right_panel.set_files_grouped([], [])
-            return
-
-        try:
-            grouped = get_changed_files_grouped(self.selected_repo_path)
-            self.right_panel.set_files_grouped(
-                grouped.get("staged", []),
-                grouped.get("unstaged", [])
-            )
-
-        except GitServiceError as exc:
-            self.right_panel.set_files_grouped(
-                [f"Erro: {str(exc)}"],
-                []
-            )
 
     def load_pull_requests(self):
         if not self.selected_repo_path:
@@ -405,11 +391,13 @@ class MainWindow(ctk.CTk):
             # Descarta o resultado se a janela fechou ou o repositório mudou.
             if not self.winfo_exists() or self.selected_repo_path != repo_path:
                 return
-            self.left_sidebar.set_pull_requests(prs)
+            with perf.timed(f"UI: left_sidebar.set_pull_requests ({len(prs)} PRs, re-render da sidebar)"):
+                self.left_sidebar.set_pull_requests(prs)
 
         def runner():
             try:
-                prs = list_open_pull_requests(repo_path)
+                with perf.timed("API GitHub: list_open_pull_requests"):
+                    prs = list_open_pull_requests(repo_path)
             except Exception:
                 self._safe_after(lambda: apply([]))
             else:
@@ -417,33 +405,88 @@ class MainWindow(ctk.CTk):
 
         threading.Thread(target=runner, daemon=True).start()
 
-    def sync_branch_ui(self, branch_name: str):
+    def sync_branch_ui(self, branch_name: str | None = None):
+        """Atualiza branches, commits e arquivos alterados sem travar a janela.
+
+        Os comandos git rodam em paralelo numa thread (collect_repo_snapshot); a UI só
+        é tocada de volta na thread principal. Se `branch_name` for None, a branch atual
+        é descoberta na própria coleta.
+        """
         if not self.selected_repo_path:
             return
 
-        branches = get_local_branches(self.selected_repo_path)
-        remote_branches = get_remote_branches(self.selected_repo_path)
-        remotes = get_remotes(self.selected_repo_path)
+        repo_path = self.selected_repo_path
+        self._sync_token += 1
+        token = self._sync_token
+        self.set_status("Atualizando dados do repositório...")
+        perf.log(f"--- sync_branch_ui iniciado (token {token}) ---")
 
-        self.is_updating_branch_ui = True
-        try:
-            self.top_bar.set_branches(branches, current_branch=branch_name)
-            self.top_bar.set_selected_branch(branch_name)
+        def apply(snapshot):
+            # Descarta resultado de uma atualização antiga, de outro repositório ou de janela fechada.
+            if (
+                not self.winfo_exists()
+                or token != self._sync_token
+                or self.selected_repo_path != repo_path
+            ):
+                return
+            self._apply_snapshot(snapshot)
 
-            self.left_sidebar.set_branches(
-                branches,
-                remote_branches=remote_branches,
-                remotes=remotes
-            )
-            self.left_sidebar.set_selected_branch(branch_name)
-            self.left_sidebar.set_footer_message(f"Branch atual: {branch_name}")
-            self.left_sidebar.set_viewing_count(len(branches))
-        finally:
-            self.is_updating_branch_ui = False
+        def fail(exc):
+            if not self.winfo_exists() or token != self._sync_token:
+                return
+            messagebox.showerror("Erro Git", str(exc))
+            self.set_status("Falha ao atualizar dados do repositório.")
 
-        self.load_commits_for_branch(branch_name)
-        self.load_changed_files()
-        self.load_pull_requests()
+        def runner():
+            try:
+                snapshot = collect_repo_snapshot(repo_path, branch_name)
+            except Exception as exc:
+                self._safe_after(lambda e=exc: fail(e))
+            else:
+                self._safe_after(lambda snap=snapshot: apply(snap))
+
+        threading.Thread(target=runner, daemon=True).start()
+
+    def _apply_snapshot(self, snapshot):
+        branch_name = snapshot.branch
+
+        with perf.timed("UI: _apply_snapshot (total, thread da UI)"):
+            self.is_updating_branch_ui = True
+            try:
+                with perf.timed("UI: top_bar.set_branches"):
+                    self.top_bar.set_branches(snapshot.local_branches, current_branch=branch_name)
+                    self.top_bar.set_selected_branch(branch_name)
+
+                with perf.timed(f"UI: left_sidebar.set_branches ({len(snapshot.local_branches)} locais, "
+                                f"{len(snapshot.remote_branches)} remotas)"):
+                    self.left_sidebar.set_branches(
+                        snapshot.local_branches,
+                        remote_branches=snapshot.remote_branches,
+                        remotes=snapshot.remotes
+                    )
+                self.left_sidebar.set_selected_branch(branch_name)
+                self.left_sidebar.set_footer_message(f"Branch atual: {branch_name}")
+                self.left_sidebar.set_viewing_count(len(snapshot.local_branches))
+            finally:
+                self.is_updating_branch_ui = False
+
+            with perf.timed(f"UI: center_panel commits ({len(snapshot.commit_rows)} linhas)"):
+                self.center_panel.set_current_branch(branch_name)
+                if snapshot.commit_error:
+                    self.center_panel.set_commits(["Erro ao carregar commits.", snapshot.commit_error])
+                else:
+                    self.center_panel.set_commit_rows(snapshot.commit_rows)
+
+            with perf.timed("UI: right_panel arquivos alterados"):
+                if snapshot.changed_files_error:
+                    self.right_panel.set_files_grouped([f"Erro: {snapshot.changed_files_error}"], [])
+                else:
+                    self.right_panel.set_files_grouped(
+                        snapshot.changed_files.get("staged", []),
+                        snapshot.changed_files.get("unstaged", [])
+                    )
+
+            self.load_pull_requests()
 
     def perform_branch_checkout(self, branch_name: str):
         if not self.selected_repo_path:
@@ -453,16 +496,25 @@ class MainWindow(ctk.CTk):
             )
             return
 
-        try:
-            checkout_branch(self.selected_repo_path, branch_name)
-            current_branch = get_current_branch(self.selected_repo_path)
+        repo_path = self.selected_repo_path
 
+        def work():
+            checkout_branch(repo_path, branch_name)
+            return get_current_branch(repo_path)
+
+        def done(current_branch):
             self.sync_branch_ui(current_branch)
             self.set_status(f"Checkout realizado com sucesso para: {current_branch}")
 
-        except GitServiceError as exc:
-            messagebox.showerror("Erro no checkout", str(exc))
-            self.set_status(f"Falha ao trocar para a branch: {branch_name}")
+        # O checkout e a consulta da branch atual são processos git (lentos no Windows):
+        # rodam em segundo plano para não travar a janela.
+        self._run_in_background(
+            work,
+            done,
+            busy_message=f"Trocando para a branch {branch_name}...",
+            error_title="Erro no checkout",
+            error_status=f"Falha ao trocar para a branch: {branch_name}",
+        )
 
     def handle_commit(self):
         if not self.selected_repo_path:
@@ -495,6 +547,81 @@ class MainWindow(ctk.CTk):
         except GitServiceError as exc:
             messagebox.showerror("Erro no commit", str(exc))
             self.set_status("Falha ao executar commit.")
+
+    def handle_amend(self):
+        if not self.selected_repo_path:
+            messagebox.showwarning(
+                "Repositório não selecionado",
+                "Selecione um repositório antes de fazer amend."
+            )
+            return
+
+        repo_path = self.selected_repo_path
+        commit_message = self.right_panel.get_commit_message()
+
+        def prepare():
+            branch = get_current_branch(repo_path)
+            if is_protected(branch):
+                return branch, False
+            return branch, is_last_commit_pushed(repo_path, branch)
+
+        def after_prepare(info):
+            branch, pushed = info
+
+            if is_protected(branch):
+                messagebox.showwarning(
+                    "Amend bloqueado",
+                    f"Não é permitido reescrever commits da branch protegida '{branch}'."
+                )
+                self.set_status("Amend bloqueado em branch protegida.")
+                return
+
+            if pushed and not messagebox.askyesno(
+                "Commit já enviado",
+                "O último commit já foi enviado ao remoto.\n"
+                "O amend reescreve o histórico e exigirá um force push "
+                "(--force-with-lease).\n\nDeseja continuar?"
+            ):
+                self.set_status("Amend cancelado.")
+                return
+
+            self._run_in_background(
+                lambda: amend_commit(repo_path, commit_message),
+                lambda result: self._finish_amend(result, pushed),
+                busy_message="Executando amend...",
+                error_title="Erro no amend",
+                error_status="Falha ao executar amend.",
+            )
+
+        self._run_in_background(
+            prepare,
+            after_prepare,
+            busy_message="Verificando último commit...",
+            error_title="Erro no amend",
+            error_status="Falha ao executar amend.",
+        )
+
+    def _finish_amend(self, result, pushed: bool):
+        self.sync_branch_ui()
+        self.right_panel.clear_commit_message()
+        self.set_status("Amend realizado com sucesso.")
+        messagebox.showinfo("Amend", result or "Amend realizado com sucesso.")
+
+        if pushed and messagebox.askyesno(
+            "Enviar ao remoto",
+            "Deseja enviar agora com force push (--force-with-lease)?"
+        ):
+            repo_path = self.selected_repo_path
+            self._run_in_background(
+                lambda: git_push_force_with_lease(repo_path),
+                lambda res: self._finish_git_action(
+                    res, "Force push executado com sucesso.", "Force push",
+                    "Force push executado com sucesso."
+                ),
+                busy_message="Executando force push...",
+                error_title="Erro Git",
+                error_status="Erro ao executar force push.",
+            )
 
     def _handle_open_pr(self):
         if not self.selected_repo_path:
@@ -754,34 +881,54 @@ class MainWindow(ctk.CTk):
             )
             return
 
-        try:
-            if action_name == "Branch":
-                branch_name = ask_string("Criar branch", "Digite o nome da nova branch:")
-                if not branch_name:
-                    return
+        if action_name == "Branch":
+            branch_name = (ask_string("Criar branch", "Digite o nome da nova branch:") or "").strip()
+            if not branch_name:
+                return
 
-                result = create_branch(self.selected_repo_path, branch_name.strip())
-                current_branch = get_current_branch(self.selected_repo_path)
+            repo_path = self.selected_repo_path
+
+            def create():
+                result = create_branch(repo_path, branch_name)
+                return result, get_current_branch(repo_path)
+
+            def created(outcome):
+                result, current_branch = outcome
                 self.sync_branch_ui(current_branch)
-
                 self.set_status(f"Branch criada com sucesso: {current_branch}")
                 messagebox.showinfo("Nova branch", result or f"Branch '{current_branch}' criada com sucesso.")
 
-            elif action_name == "Stash":
-                result = git_stash(self.selected_repo_path)
-                self.sync_branch_ui(get_current_branch(self.selected_repo_path))
-                self.set_status("Stash executado com sucesso.")
-                messagebox.showinfo("Stash", result or "Stash executado com sucesso.")
+            self._run_in_background(
+                create,
+                created,
+                busy_message="Criando branch...",
+                error_title="Erro Git",
+                error_status="Erro ao executar ação: Branch",
+            )
+            return
 
-            elif action_name == "Pop":
-                result = git_stash_pop(self.selected_repo_path)
-                self.sync_branch_ui(get_current_branch(self.selected_repo_path))
-                self.set_status("Stash pop executado com sucesso.")
-                messagebox.showinfo("Pop", result or "Stash pop executado com sucesso.")
+        if action_name in {"Stash", "Pop"}:
+            repo_path = self.selected_repo_path
+            is_stash = action_name == "Stash"
+            success = "Stash executado com sucesso." if is_stash else "Stash pop executado com sucesso."
 
-            elif action_name == "Refresh":
-                current_branch = get_current_branch(self.selected_repo_path)
-                self.sync_branch_ui(current_branch)
+            def stashed(result):
+                self.sync_branch_ui()
+                self.set_status(success)
+                messagebox.showinfo(action_name, result or success)
+
+            self._run_in_background(
+                (lambda: git_stash(repo_path)) if is_stash else (lambda: git_stash_pop(repo_path)),
+                stashed,
+                busy_message="Executando stash..." if is_stash else "Executando stash pop...",
+                error_title="Erro Git",
+                error_status=f"Erro ao executar ação: {action_name}",
+            )
+            return
+
+        try:
+            if action_name == "Refresh":
+                self.sync_branch_ui()
                 self.set_status("Dados atualizados com sucesso.")
                 messagebox.showinfo("Refresh", "Dados atualizados com sucesso.")
 
@@ -822,9 +969,7 @@ class MainWindow(ctk.CTk):
         self.top_bar.set_repositories(repo_names, repo_name)
 
         try:
-            current_branch = get_current_branch(folder)
-
-            self.sync_branch_ui(current_branch)
+            self.sync_branch_ui()
             self.set_status(f"Repositório selecionado: {repo_name} ({folder})")
 
         except GitServiceError as exc:
