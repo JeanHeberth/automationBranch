@@ -176,11 +176,15 @@ class LeftSidebar(ctk.CTkFrame):
         self.remote_branches: list[str] = []
         self.remotes: list[str] = []
         self.pull_requests: list[dict] = []
+        # Estado de merge de cada PR (number -> {"state", "label", "auto_merge"}) e PRs
+        # que o app está acompanhando para mergear sozinho quando os checks passarem.
+        self.pr_statuses: dict[int, dict] = {}
+        self.pr_watching: set[int] = set()
 
         # O que está desenhado hoje: permite pular redesenhos idênticos (muito caro no Windows).
         self._rendered_local: list[str] | None = None
         self._rendered_remote: tuple | None = None
-        self._rendered_prs: list[dict] | None = None
+        self._rendered_prs: tuple | None = None
         self._remote_expanded = False
         self._filter_job = None
 
@@ -427,9 +431,38 @@ class LeftSidebar(ctk.CTkFrame):
                     pady=5,
                 ).pack(fill="x")
 
+    def _pr_signature(self):
+        numbers = {pr.get("number") for pr in self.pull_requests}
+        statuses = {
+            n: (st.get("state"), st.get("label"), st.get("auto_merge"))
+            for n, st in self.pr_statuses.items()
+            if n in numbers
+        }
+        return [dict(pr) for pr in self.pull_requests], statuses, frozenset(self.pr_watching & numbers)
+
+    def _pr_merge_button_spec(self, number, status: dict | None) -> tuple[str, bool, str, str]:
+        """(texto, habilitado, cor, cor no hover) do botão de merge de um PR."""
+        if number in self.pr_watching:
+            return "Cancelar", True, "#B45309", "#D97706"
+
+        if status is None:
+            return "Merge", True, "#374151", "#4B5563"
+
+        state = status.get("state")
+        if state == "ready":
+            return "Merge", True, "#16A34A", "#22C55E"
+        if state == "pending":
+            if status.get("auto_merge"):
+                return "Auto ativo", False, "#1F2937", "#1F2937"
+            return "Auto-merge", True, "#374151", "#4B5563"
+        if state == "behind":
+            return "Atualizar", True, "#C2410C", "#EA580C"
+
+        return "Merge", False, "#1F2937", "#1F2937"
+
     def _render_pull_requests_section(self):
         self._clear_box(self.pr_box)
-        self._rendered_prs = [dict(pr) for pr in self.pull_requests]
+        self._rendered_prs = self._pr_signature()
 
         prs = SidebarSection(
             self.pr_box,
@@ -473,7 +506,25 @@ class LeftSidebar(ctk.CTkFrame):
                 text_color=APP_COLORS["muted"],
                 font=ctk.CTkFont(size=10),
                 anchor="w"
-            ).pack(fill="x", padx=8, pady=(0, 5))
+            ).pack(fill="x", padx=8, pady=(0, 3))
+
+            status = self.pr_statuses.get(pr.get("number"))
+            if status:
+                label = status.get("label", "")
+                if pr.get("number") in self.pr_watching:
+                    label += " · merge automático (app aberto)"
+                elif status.get("auto_merge"):
+                    label += " · auto-merge ativo"
+
+                ctk.CTkLabel(
+                    item,
+                    text=f"●  {label}",
+                    text_color=self.PR_STATE_COLORS.get(status.get("state"), APP_COLORS["muted"]),
+                    font=ctk.CTkFont(size=10),
+                    anchor="w",
+                    justify="left",
+                    wraplength=180
+                ).pack(fill="x", padx=8, pady=(0, 5))
 
             actions_row = ctk.CTkFrame(item, fg_color="transparent")
             actions_row.pack(fill="x", padx=6, pady=(0, 6))
@@ -492,19 +543,32 @@ class LeftSidebar(ctk.CTkFrame):
             )
             open_btn.pack(side="left", padx=(0, 5))
 
+            merge_text, merge_enabled, merge_color, merge_hover = self._pr_merge_button_spec(
+                pr.get("number"), status
+            )
             merge_btn = ctk.CTkButton(
                 actions_row,
-                text="Merge",
-                width=58,
+                text=merge_text,
+                width=80,
                 height=26,
-                fg_color="#374151",
-                hover_color="#4B5563",
-                text_color=APP_COLORS["text"],
+                fg_color=merge_color,
+                hover_color=merge_hover,
+                text_color=APP_COLORS["text"] if merge_enabled else APP_COLORS["muted"],
                 corner_radius=7,
                 font=ctk.CTkFont(size=10, weight="bold"),
+                state="normal" if merge_enabled else "disabled",
                 command=lambda p=pr: self._handle_merge_pr_click(p)
             )
             merge_btn.pack(side="left")
+
+    PR_STATE_COLORS = {
+        "ready": "#22C55E",
+        "pending": "#EAB308",
+        "failed": "#EF4444",
+        "conflict": "#EF4444",
+        "behind": "#F97316",
+        "blocked": "#9CA3AF",
+    }
 
     def _handle_open_pr_click(self, pr: dict):
         if self.on_open_pr:
@@ -571,7 +635,16 @@ class LeftSidebar(ctk.CTkFrame):
     def set_pull_requests(self, pull_requests: list[dict]):
         self.pull_requests = pull_requests[:] if pull_requests else []
 
-        if self._rendered_prs == self.pull_requests:
+        if self._rendered_prs == self._pr_signature():
+            return
+
+        self._render_pull_requests_section()
+
+    def set_pull_request_statuses(self, statuses: dict[int, dict], watching: set[int] | None = None):
+        self.pr_statuses = dict(statuses)
+        self.pr_watching = set(watching or ())
+
+        if self._rendered_prs == self._pr_signature():
             return
 
         self._render_pull_requests_section()
