@@ -46,6 +46,18 @@ from services.pull_request_service import (
     create_pull_request,
     merge_pull_request,
     find_open_pull_request_by_head,
+    get_pull_request_merge_status,
+    enable_auto_merge,
+    update_pull_request_branch,
+    AutoMergeUnavailableError,
+    PullRequestReadyError,
+    PR_PENDING,
+    PR_READY,
+    PR_FAILED,
+    PR_CONFLICT,
+    PR_BEHIND,
+    PR_BLOCKED,
+    PR_CLOSED,
 )
 from services.sync_service import (
     git_pull,
@@ -66,6 +78,11 @@ ctk.set_default_color_theme("blue")
 
 
 class MainWindow(ctk.CTk):
+    # Atualização do estado dos checks dos PRs: só roda enquanto há PR pendente ou
+    # "merge automático" local ativo, para não gastar o rate limit da API do GitHub.
+    PR_POLL_INTERVAL_MS = 20_000
+    PR_POLL_MAX_IDLE_CYCLES = 45
+
     def __init__(self):
         super().__init__()
 
@@ -80,6 +97,15 @@ class MainWindow(ctk.CTk):
         self._bg_busy = False
         # Identifica a atualização mais recente da UI (descarta resultados atrasados).
         self._sync_token = 0
+        # Estado de merge dos PRs do repositório selecionado (number -> status).
+        self._pr_statuses: dict[int, dict] = {}
+        self._pr_statuses_repo: str | None = None
+        self._pr_status_token = 0
+        # PRs que o app mergeia sozinho quando os checks passam: (repo_path, number) -> dados.
+        # Fallback para repositórios sem o auto-merge do GitHub; só vale com o app aberto.
+        self._pr_watch: dict[tuple, dict] = {}
+        self._pr_poll_job = None
+        self._pr_poll_cycles = 0
 
         self._configure_window_size()
         perf.start_ui_lag_monitor(self)
@@ -393,6 +419,7 @@ class MainWindow(ctk.CTk):
                 return
             with perf.timed(f"UI: left_sidebar.set_pull_requests ({len(prs)} PRs, re-render da sidebar)"):
                 self.left_sidebar.set_pull_requests(prs)
+            self._refresh_pr_statuses(prs)
 
         def runner():
             try:
@@ -770,23 +797,8 @@ class MainWindow(ctk.CTk):
                         pr_title = pr["title"]
                         break
 
-        confirm = messagebox.askyesno(
-            "Confirmar merge",
-            f"Deseja mergear o PR #{pr_number}?\n\n{pr_title}"
-        )
-        if not confirm:
-            return
-
-        pr_number = int(pr_number)
-
-        # 2º passo (rede): faz o merge.
-        self._run_in_background(
-            lambda: merge_pull_request(repo_path, pr_number),
-            lambda result: self._finish_merge(result, pr_number),
-            busy_message=f"Mesclando PR #{pr_number}...",
-            error_title="Erro ao mergear PR",
-            error_status="Falha ao mergear Pull Request.",
-        )
+        # Mesma regra do botão da sidebar: confere os checks antes de tentar o merge.
+        self.handle_merge_pr_item({"number": pr_number, "title": pr_title})
 
     def handle_open_pr_item(self, pr: dict):
         url = pr.get("url", "").strip()
@@ -808,6 +820,52 @@ class MainWindow(ctk.CTk):
             messagebox.showwarning("PR inválido", "Não foi possível identificar o número do PR.")
             return
 
+        pr_number = int(pr_number)
+        repo_path = self.selected_repo_path
+        key = (repo_path, pr_number)
+
+        # O botão vira "Cancelar" enquanto o app acompanha o PR.
+        if key in self._pr_watch:
+            self._cancel_pr_watch(key)
+            return
+
+        def query_status():
+            try:
+                return get_pull_request_merge_status(repo_path, pr_number, use_cache=False)
+            except Exception:
+                # Sem o status o usuário ainda pode tentar o merge; o GitHub é quem decide.
+                return None
+
+        self._run_in_background(
+            query_status,
+            lambda status: self._dispatch_pr_merge(repo_path, pr_number, pr_title, status),
+            busy_message=f"Verificando checks do PR #{pr_number}...",
+            error_title="Erro ao verificar PR",
+            error_status="Falha ao verificar Pull Request.",
+        )
+
+    def _dispatch_pr_merge(self, repo_path: str, pr_number: int, pr_title: str, status: dict | None):
+        state = status.get("state") if status else None
+
+        if state == PR_PENDING:
+            self._offer_auto_merge(repo_path, pr_number, pr_title)
+            return
+
+        if state == PR_BEHIND:
+            self._offer_update_branch(repo_path, pr_number, pr_title)
+            return
+
+        if state in (PR_FAILED, PR_CONFLICT, PR_BLOCKED):
+            messagebox.showwarning(status["label"], status["detail"] or status["label"])
+            self._refresh_pr_statuses()
+            return
+
+        if state == PR_CLOSED:
+            messagebox.showinfo("PR encerrado", f"O PR #{pr_number} já foi mergeado ou fechado.")
+            self.load_pull_requests()
+            return
+
+        # PR_READY, ou status desconhecido: merge manual.
         confirm = messagebox.askyesno(
             "Confirmar merge",
             f"Deseja mergear o PR #{pr_number}?\n\n{pr_title}"
@@ -815,14 +873,281 @@ class MainWindow(ctk.CTk):
         if not confirm:
             return
 
-        pr_number = int(pr_number)
         self._run_in_background(
-            lambda: merge_pull_request(self.selected_repo_path, pr_number),
+            lambda: merge_pull_request(repo_path, pr_number),
             lambda result: self._finish_merge(result, pr_number),
             busy_message=f"Mesclando PR #{pr_number}...",
             error_title="Erro ao mergear PR",
             error_status="Falha ao mergear Pull Request.",
         )
+
+    def _offer_auto_merge(self, repo_path: str, pr_number: int, pr_title: str):
+        confirm = messagebox.askyesno(
+            "Checks em execução",
+            f"Os checks do PR #{pr_number} ainda não terminaram.\n\n"
+            f"Deseja ativar o merge automático para quando eles passarem?\n\n{pr_title}"
+        )
+        if not confirm:
+            return
+
+        def enable():
+            try:
+                enable_auto_merge(repo_path, pr_number)
+                return "github"
+            except AutoMergeUnavailableError:
+                return "local"
+            except PullRequestReadyError:
+                return "ready"
+
+        self._run_in_background(
+            enable,
+            lambda mode: self._after_auto_merge_request(mode, repo_path, pr_number, pr_title),
+            busy_message=f"Ativando merge automático do PR #{pr_number}...",
+            error_title="Erro ao ativar merge automático",
+            error_status="Falha ao ativar merge automático.",
+        )
+
+    def _after_auto_merge_request(self, mode: str, repo_path: str, pr_number: int, pr_title: str):
+        if mode == "github":
+            self.set_status(f"Auto-merge do GitHub ativado no PR #{pr_number}.")
+            messagebox.showinfo(
+                "Auto-merge ativado",
+                f"O GitHub vai mergear o PR #{pr_number} automaticamente quando os checks obrigatórios passarem."
+            )
+        elif mode == "local":
+            self._pr_watch[(repo_path, pr_number)] = {"title": pr_title, "merging": False}
+            self._pr_poll_cycles = 0
+            self.set_status(f"Acompanhando checks do PR #{pr_number}.")
+            messagebox.showinfo(
+                "Merge automático local",
+                "O auto-merge do GitHub não está habilitado neste repositório "
+                "(depende de uma configuração de administrador).\n\n"
+                f"O app vai acompanhar os checks e mergear o PR #{pr_number} quando passarem, "
+                "mas só enquanto estiver aberto.\n\n"
+                "Se preferir, você também pode mergear manualmente quando o PR ficar verde."
+            )
+        else:
+            self.set_status(f"Checks do PR #{pr_number} já concluíram.")
+            messagebox.showinfo(
+                "Checks concluídos",
+                f"Os checks do PR #{pr_number} já terminaram. Clique em Merge para concluir."
+            )
+
+        self._refresh_pr_statuses()
+
+    def _offer_update_branch(self, repo_path: str, pr_number: int, pr_title: str):
+        confirm = messagebox.askyesno(
+            "Branch desatualizada",
+            f"A branch do PR #{pr_number} está atrás da base.\n\n"
+            f"Deseja atualizá-la agora? Os checks vão rodar de novo.\n\n{pr_title}"
+        )
+        if not confirm:
+            return
+
+        self._run_in_background(
+            lambda: update_pull_request_branch(repo_path, pr_number),
+            lambda _result: self._after_update_branch(pr_number),
+            busy_message=f"Atualizando branch do PR #{pr_number}...",
+            error_title="Erro ao atualizar branch do PR",
+            error_status="Falha ao atualizar branch do Pull Request.",
+        )
+
+    def _after_update_branch(self, pr_number: int):
+        self.set_status(f"Branch do PR #{pr_number} atualizada. Aguardando novos checks.")
+
+        # O GitHub leva alguns segundos para recalcular; mostra "pendente" até o próximo
+        # polling trazer o estado real.
+        self._pr_statuses[pr_number] = {
+            "state": PR_PENDING,
+            "label": "Atualizando branch",
+            "detail": "",
+            "auto_merge": False,
+        }
+        self.left_sidebar.set_pull_request_statuses(self._pr_statuses, self._watching_numbers())
+        self._pr_poll_cycles = 0
+        self._schedule_pr_poll()
+
+    # ------------------------------------------------------------------
+    # Estado dos checks dos PRs + merge automático local
+    # ------------------------------------------------------------------
+
+    def _watching_numbers(self) -> set[int]:
+        return {number for repo_path, number in self._pr_watch if repo_path == self.selected_repo_path}
+
+    def _refresh_pr_statuses(self, prs: list | None = None, from_poll: bool = False):
+        """Consulta o estado de merge dos PRs em segundo plano e redesenha a sidebar.
+
+        No polling (`from_poll`) a lista de PRs também é recarregada, o que faz sumir da
+        sidebar os PRs que o GitHub mergeou sozinho via auto-merge.
+        """
+        repo_path = self.selected_repo_path
+
+        if repo_path and self._pr_statuses_repo != repo_path:
+            self._pr_statuses = {}
+            self._pr_statuses_repo = repo_path
+            self.left_sidebar.set_pull_request_statuses({}, self._watching_numbers())
+
+        if not from_poll:
+            self._pr_poll_cycles = 0
+
+        known_prs = list(prs) if prs is not None else list(self.left_sidebar.pull_requests)
+        watch_keys = list(self._pr_watch)
+
+        if not repo_path and not watch_keys:
+            return
+
+        self._pr_status_token += 1
+        token = self._pr_status_token
+        use_cache = not from_poll
+
+        def fetch(key):
+            try:
+                return get_pull_request_merge_status(key[0], key[1], use_cache=use_cache)
+            except Exception:
+                return None
+
+        def work():
+            current_prs = known_prs
+            fresh_list = False
+
+            if from_poll and repo_path:
+                try:
+                    current_prs = list_open_pull_requests(repo_path, use_cache=False)
+                    fresh_list = True
+                except Exception:
+                    pass
+
+            keys = [(repo_path, pr.get("number")) for pr in current_prs] if repo_path else []
+            keys += [key for key in watch_keys if key not in keys]
+
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                results = dict(zip(keys, pool.map(fetch, keys)))
+
+            return current_prs, fresh_list, results
+
+        def apply(data):
+            current_prs, fresh_list, results = data
+
+            # Descarta resultado atrasado ou de janela fechada.
+            if not self.winfo_exists() or token != self._pr_status_token:
+                return
+
+            if repo_path and self.selected_repo_path == repo_path:
+                if fresh_list:
+                    self.left_sidebar.set_pull_requests(current_prs)
+
+                statuses = {}
+                for pr in current_prs:
+                    number = pr.get("number")
+                    # Se a consulta falhou, mantém o último estado conhecido.
+                    status = results.get((repo_path, number)) or self._pr_statuses.get(number)
+                    if status:
+                        statuses[number] = status
+                self._pr_statuses = statuses
+
+            for key in list(self._pr_watch):
+                status = results.get(key)
+                if status:
+                    self._handle_watch_status(key, status)
+
+            self.left_sidebar.set_pull_request_statuses(self._pr_statuses, self._watching_numbers())
+            self._schedule_pr_poll()
+
+        def runner():
+            try:
+                data = work()
+            except Exception:
+                return
+            self._safe_after(lambda: apply(data))
+
+        threading.Thread(target=runner, daemon=True).start()
+
+    def _schedule_pr_poll(self):
+        if self._pr_poll_job is not None:
+            return
+
+        has_pending = any(st.get("state") == PR_PENDING for st in self._pr_statuses.values())
+        if not self._pr_watch and not has_pending:
+            return
+
+        # PR pendente sem ninguém esperando (ex.: checks que nunca iniciam) não é
+        # consultado para sempre; um refresh manual reinicia a contagem.
+        if not self._pr_watch and self._pr_poll_cycles >= self.PR_POLL_MAX_IDLE_CYCLES:
+            return
+
+        try:
+            self._pr_poll_job = self.after(self.PR_POLL_INTERVAL_MS, self._poll_pr_statuses)
+        except (RuntimeError, TclError):
+            self._pr_poll_job = None
+
+    def _poll_pr_statuses(self):
+        self._pr_poll_job = None
+        if not self.winfo_exists():
+            return
+
+        self._pr_poll_cycles += 1
+        self._refresh_pr_statuses(from_poll=True)
+
+    def _handle_watch_status(self, key: tuple, status: dict):
+        entry = self._pr_watch.get(key)
+        if not entry or entry.get("merging"):
+            return
+
+        repo_path, pr_number = key
+        state = status.get("state")
+
+        if state == PR_READY:
+            entry["merging"] = True
+            self._merge_watched_pr(key)
+        elif state == PR_CLOSED:
+            self._pr_watch.pop(key, None)
+            self.set_status(f"PR #{pr_number} foi mergeado ou fechado.")
+            if repo_path == self.selected_repo_path:
+                self.load_pull_requests()
+        elif state in (PR_FAILED, PR_CONFLICT, PR_BEHIND, PR_BLOCKED):
+            self._pr_watch.pop(key, None)
+            self.set_status(f"Merge automático do PR #{pr_number} cancelado.")
+            messagebox.showwarning(
+                "Merge automático cancelado",
+                f"O PR #{pr_number} não pôde ser mergeado automaticamente: "
+                f"{status.get('label', '')}.\n\n{status.get('detail', '')}"
+            )
+
+    def _merge_watched_pr(self, key: tuple):
+        repo_path, pr_number = key
+
+        def runner():
+            try:
+                result = merge_pull_request(repo_path, pr_number)
+            except Exception as exc:
+                self._safe_after(lambda e=exc: self._watched_merge_failed(key, e))
+            else:
+                self._safe_after(lambda r=result: self._watched_merge_done(key, r))
+
+        self.set_status(f"Checks do PR #{pr_number} concluídos. Mesclando...")
+        threading.Thread(target=runner, daemon=True).start()
+
+    def _watched_merge_done(self, key: tuple, result: dict):
+        repo_path, pr_number = key
+        self._pr_watch.pop(key, None)
+
+        if repo_path == self.selected_repo_path:
+            self._finish_merge(result, pr_number)
+        else:
+            self.set_status(f"PR #{pr_number} mergeado com sucesso.")
+            messagebox.showinfo("Merge realizado", f"PR #{pr_number} mergeado com sucesso.")
+
+    def _watched_merge_failed(self, key: tuple, exc: Exception):
+        _repo_path, pr_number = key
+        self._pr_watch.pop(key, None)
+        self.set_status("Falha ao mergear Pull Request.")
+        messagebox.showerror(f"Erro ao mergear PR #{pr_number}", str(exc))
+        self.left_sidebar.set_pull_request_statuses(self._pr_statuses, self._watching_numbers())
+
+    def _cancel_pr_watch(self, key: tuple):
+        self._pr_watch.pop(key, None)
+        self.set_status(f"Merge automático do PR #{key[1]} cancelado.")
+        self.left_sidebar.set_pull_request_statuses(self._pr_statuses, self._watching_numbers())
 
     def handle_top_action(self, action_name: str):
         self.set_status(f"Ação executada: {action_name}")
