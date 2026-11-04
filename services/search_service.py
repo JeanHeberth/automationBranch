@@ -1,8 +1,9 @@
+import os
 import posixpath
 import re
 from typing import Any, Dict, List
 
-from services.git_runner import run_git_command
+from services.git_runner import GitServiceError, run_git_command
 
 COMMIT_MODES = ("message", "author", "code")
 _FORMAT = "%h%x01%s%x01%an%x01%ad"
@@ -132,3 +133,59 @@ def filter_branches(local: List[str], remote: List[str], query: str, limit: int 
         results.append({"name": name, "remote": True})
 
     return results[:limit]
+
+
+MAX_CONTENT_RESULTS = 200
+MIN_CONTENT_QUERY = 2
+MAX_LINE_CHARS = 160
+MAX_VIEW_CHARS = 400_000
+
+
+def search_content(repo_path: str, query: str, limit: int = MAX_CONTENT_RESULTS) -> List[Dict[str, Any]]:
+    """Procura o texto dentro dos arquivos (rastreados e novos, sem os ignorados nem binários).
+
+    Cada resultado é {"path", "line", "text"}. Até 5 ocorrências por arquivo, para um arquivo
+    gigante não esconder os demais.
+    """
+    query = query.strip()
+    if len(query) < MIN_CONTENT_QUERY:
+        return []
+
+    output = run_git_command(
+        repo_path,
+        [
+            "-c", "core.quotepath=off",
+            "grep", "-n", "-I", "-i", "-F", "--null", "--untracked", "--exclude-standard",
+            "-m", "5", "-e", query,
+        ],
+        strip=False,
+        ok_returncodes=(0, 1),  # 1 = nenhuma ocorrência
+    )
+
+    results = []
+    for line in (output or "").splitlines():
+        parts = line.split("\0", 2)
+        if len(parts) < 3 or not parts[1].isdigit():
+            continue
+        results.append({"path": parts[0], "line": int(parts[1]), "text": parts[2].strip()[:MAX_LINE_CHARS]})
+        if len(results) >= limit:
+            break
+
+    return results
+
+
+def read_file_for_view(repo_path: str, path: str) -> str:
+    """Conteúdo do arquivo no disco, para o visualizador (com limite de tamanho)."""
+    full_path = os.path.join(repo_path, path)
+
+    try:
+        with open(full_path, "rb") as handle:
+            raw = handle.read(MAX_VIEW_CHARS + 1)
+    except OSError as exc:
+        raise GitServiceError(f"Não foi possível ler {path}: {exc}") from exc
+
+    if b"\0" in raw:
+        raise GitServiceError(f"{path} é um arquivo binário.")
+
+    text = raw[:MAX_VIEW_CHARS].decode("utf-8", errors="replace")
+    return text + "\n\n... arquivo truncado ..." if len(raw) > MAX_VIEW_CHARS else text
