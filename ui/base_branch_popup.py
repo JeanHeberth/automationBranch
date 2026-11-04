@@ -17,6 +17,7 @@ class BaseBranchPopup(ctk.CTkToplevel):
         confirm_text: str = "Continuar",
     ):
         super().__init__(master)
+        self.withdraw()  # exibida só depois de posicionada (ver center_on_master)
 
         self.options = options
         self._label = label

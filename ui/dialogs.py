@@ -29,6 +29,7 @@ def ask_string(title: str, prompt: str, initialvalue: str = "") -> str | None:
 class _TextDialog(ctk.CTkToplevel):
     def __init__(self, master, title: str, prompt: str, initialvalue: str = ""):
         super().__init__(master)
+        self.withdraw()  # exibida só depois de posicionada (ver center_on_master)
         self.result: str | None = None
 
         self.title(title)

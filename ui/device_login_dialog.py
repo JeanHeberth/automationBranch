@@ -12,6 +12,7 @@ class DeviceLoginDialog(ctk.CTkToplevel):
 
     def __init__(self, master, user_code: str, verification_uri: str, on_cancel=None):
         super().__init__(master)
+        self.withdraw()  # exibida só depois de posicionada (ver center_on_master)
 
         self.user_code = user_code
         self.verification_uri = verification_uri
