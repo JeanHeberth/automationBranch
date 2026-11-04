@@ -30,9 +30,14 @@ Desenvolvida em Python com foco em produtividade, visual moderno e facilidade de
       removeu este texto?", `git log -S`); o resultado abre o diff do commit
     - **Arquivos** por nome ou caminho, com o histórico do arquivo (seguindo renomeações)
     - **Branches** locais e remotas; escolher faz o checkout (remotas criam a branch local)
+    - **PRs** abertos, mergeados e fechados, por número (`#12`), título, branch ou autor; escolher
+      abre o PR no navegador
+    - **Conteúdo** dos arquivos (`git grep`, ignora binários e o `.gitignore`); escolher abre o
+      arquivo na linha encontrada
 - ✏️ Amend com proteção de branch protegida e force push guiado (`--force-with-lease`)
 - 🔀 Pull Requests: abrir, acompanhar o estado dos checks e mergear (inclusive merge automático
-  quando os checks passam)
+  quando os checks passam). Dá para abrir PR a partir de qualquer branch, inclusive `develop → main`;
+  só `main` e `master` são bloqueadas como origem. O app nunca apaga a branch de origem no merge
 - 🔐 Login com GitHub (Device Flow), com token guardado no cofre do sistema
 - ⚡ Commit, stash, login e demais operações Git rodam em segundo plano, sem travar a janela
 - 🧠 Interface intuitiva estilo ferramentas profissionais
@@ -57,11 +62,14 @@ automationBranch/
 │   ├── center_panel.py
 │   ├── right_panel.py       # Arquivos (checkboxes, stage/unstage/descartar), stashes e commit
 │   ├── diff_viewer.py       # Janela de diff com cores
-│   ├── search_dialog.py     # Busca global (commits, arquivos, branches)
+│   ├── search_dialog.py     # Busca global (commits, arquivos, branches, PRs, conteúdo)
+│   ├── file_viewer.py       # Arquivo com número de linha e linha destacada
 │   ├── profile_popup.py     # Janela "Conectar conta"
 │   ├── profile_menu.py
 │   ├── device_login_dialog.py  # Código do Device Flow do GitHub
 │   ├── delete_branch_popup.py
+│   ├── base_branch_popup.py # Escolha da branch de destino ao abrir um PR
+│   ├── dialogs.py           # Diálogos de texto (título e descrição do PR, stash)
 │   └── theme.py
 ├── services/               # Lógica de negócio (Git CLI + GitHub API)
 │   ├── git_runner.py        # Wrapper de subprocess para o Git
@@ -69,14 +77,15 @@ automationBranch/
 │   ├── branch_delete_service.py
 │   ├── commit_service.py    # commit/amend por seleção, diff, stage/unstage/descartar
 │   ├── stash_service.py     # criar, listar, aplicar, pop e descartar stashes
-│   ├── search_service.py    # busca de commits, arquivos, histórico de arquivo e branches
+│   ├── search_service.py    # busca de commits, arquivos, branches e conteúdo (git grep)
 │   ├── repo_snapshot.py     # coleta em paralelo o que a UI precisa redesenhar
 │   ├── sync_service.py      # pull / push
-│   ├── pull_request_service.py
+│   ├── pull_request_service.py  # PRs: abrir, listar, checks, merge, busca
 │   ├── auth_service.py
 │   ├── github_auth_service.py  # login via Device Flow do GitHub
-│   └── session_service.py   # sessão e token (keyring)
-├── tests/                  # Testes com pytest
+│   ├── session_service.py   # sessão e token (keyring)
+│   └── perf.py              # medição de desempenho (AUTOMATION_PERF=1)
+├── tests/                  # Testes com pytest, usando repositórios Git reais e temporários
 ├── assets/
 │   └── icons/              # ícones da interface (inclui o logo do GitHub)
 ├── requirements.txt
@@ -152,6 +161,16 @@ python main.py
 ```bash
 pip install -r requirements-dev.txt
 pytest
+```
+
+Os testes de serviços criam repositórios Git de verdade em pastas temporárias (nada toca nos seus
+repositórios, no Keychain ou no seu `session.json`), e a API do GitHub é simulada.
+
+Para rodar um arquivo ou um teste específico:
+
+```bash
+pytest tests/test_search_service.py
+pytest -k "stash and pop"
 ```
 
 Para ver a cobertura da camada de serviços:
@@ -234,7 +253,7 @@ as operações de Pull Request.
 - [x] Diff por arquivo
 - [x] Stage / unstage / descartar alterações por arquivo
 - [x] Stash com lista, diff, aplicar, pop e descartar
-- [x] Busca global de commits, arquivos e branches
+- [x] Busca global de commits, arquivos, branches, Pull Requests e conteúdo dos arquivos
 - [x] Commit e login em segundo plano (sem travar a janela)
 
 ### 🔥 Em desenvolvimento

@@ -22,7 +22,10 @@ def run_git_command(
     args: list[str],
     strip: bool = True,
     timeout: float | None = DEFAULT_TIMEOUT,
+    ok_returncodes: tuple[int, ...] = (0,),
 ) -> str:
+    """Roda `git -C repo_path <args>`. `ok_returncodes` lista saídas que não são erro
+    (ex.: `git grep` sai com 1 quando não encontra nada)."""
     try:
         with timed(f"git {' '.join(args[:3])}"):
             result = subprocess.run(
@@ -43,6 +46,8 @@ def run_git_command(
             f"(git {' '.join(args)}). Pode ser rede lenta ou o Git aguardando credenciais."
         ) from exc
     except subprocess.CalledProcessError as exc:
+        if exc.returncode in ok_returncodes:
+            return exc.stdout.strip() if strip else exc.stdout.rstrip("\r\n")
         error_message = (
             (exc.stderr or "").strip()
             or (exc.stdout or "").strip()

@@ -13,6 +13,8 @@ from ui.center_panel import CenterPanel
 from ui.right_panel import RightPanel
 from ui.diff_viewer import DiffViewer
 from ui.search_dialog import SearchDialog
+from ui.file_viewer import FileViewer
+from services.search_service import read_file_for_view
 from ui.profile_popup import ProfileConnectPopup
 from ui.device_login_dialog import DeviceLoginDialog
 from ui.profile_menu import ProfileMenu
@@ -233,6 +235,8 @@ class MainWindow(ctk.CTk):
             self.selected_repo_path,
             on_open_commit=self._show_commit_diff,
             on_checkout_branch=self._checkout_from_search,
+            on_open_pr=self.handle_open_pr_item,
+            on_open_file=self._show_file_at_line,
         )
 
     def _show_commit_diff(self, commit_hash: str, subject: str):
@@ -245,6 +249,20 @@ class MainWindow(ctk.CTk):
                 self._safe_after(lambda e=exc: messagebox.showerror("Erro ao carregar commit", str(e)))
             else:
                 self._safe_after(lambda: DiffViewer(self, f"{commit_hash}  {subject}", diff))
+
+        # Só leitura: não usa o bloqueio de operações Git.
+        threading.Thread(target=runner, daemon=True).start()
+
+    def _show_file_at_line(self, path: str, line: int):
+        repo_path = self.selected_repo_path
+
+        def runner():
+            try:
+                text = read_file_for_view(repo_path, path)
+            except Exception as exc:
+                self._safe_after(lambda e=exc: messagebox.showerror("Erro ao abrir arquivo", str(e)))
+            else:
+                self._safe_after(lambda: FileViewer(self, f"{path}:{line}", text, line))
 
         # Só leitura: não usa o bloqueio de operações Git.
         threading.Thread(target=runner, daemon=True).start()

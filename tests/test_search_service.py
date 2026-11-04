@@ -156,3 +156,97 @@ def test_filter_branches_remota_so_aparece_sem_local_correspondente():
         {"name": "origin/feature/busca", "remote": True},
     ]
     assert filter_branches(local, remote, "") == []
+
+
+# --- conteúdo dos arquivos ---
+
+from services.git_runner import GitServiceError, run_git_command  # noqa: E402
+from services.search_service import read_file_for_view, search_content  # noqa: E402
+
+
+@pytest.fixture
+def content_repo(git_repo):
+    _commit(git_repo, "src/util.py", "def calcular_imposto():\n    return 1\n# Calcular de novo\n", "util")
+    _commit(git_repo, "a b.txt", "x: y\ncalcular\n", "espaco")
+    return git_repo
+
+
+def test_search_content_acha_linha_e_arquivo_ignorando_maiusculas(content_repo):
+    rows = search_content(content_repo, "calcular")
+
+    assert {"path": "src/util.py", "line": 1, "text": "def calcular_imposto():"} in rows
+    assert {"path": "src/util.py", "line": 3, "text": "# Calcular de novo"} in rows
+    assert {"path": "a b.txt", "line": 2, "text": "calcular"} in rows
+
+
+def test_search_content_sem_resultado_nao_e_erro(content_repo):
+    assert search_content(content_repo, "texto-que-nao-existe") == []
+
+
+def test_search_content_inclui_arquivo_novo_e_acento_e_ignora_gitignore(content_repo):
+    with open(os.path.join(content_repo, ".gitignore"), "w") as handle:
+        handle.write("*.log\n")
+    for name, body in (("novo.txt", "calcular novo\n"), ("relatório.txt", "café calcular\n"), ("x.log", "calcular\n")):
+        with open(os.path.join(content_repo, name), "w", encoding="utf-8") as handle:
+            handle.write(body)
+
+    paths = {row["path"] for row in search_content(content_repo, "calcular")}
+
+    assert {"novo.txt", "relatório.txt"} <= paths
+    assert "x.log" not in paths
+
+
+def test_search_content_pula_binarios(content_repo):
+    with open(os.path.join(content_repo, "bin.dat"), "wb") as handle:
+        handle.write(b"calcular\x00\x01")
+
+    assert "bin.dat" not in {row["path"] for row in search_content(content_repo, "calcular")}
+
+
+def test_search_content_texto_literal_e_consulta_curta(content_repo):
+    assert search_content(content_repo, "(") == []   # curta demais
+    assert search_content(content_repo, ".*") == []   # regex não é interpretada
+    assert search_content(content_repo, "  ") == []
+
+
+def test_search_content_limita_ocorrencias_por_arquivo_e_total(content_repo):
+    with open(os.path.join(content_repo, "grande.txt"), "w") as handle:
+        handle.write("alvo\n" * 50)
+
+    rows = search_content(content_repo, "alvo")
+    assert len(rows) == 5  # máximo por arquivo
+
+    for i in range(10):
+        with open(os.path.join(content_repo, f"f{i}.txt"), "w") as handle:
+            handle.write("alvo\n")
+    assert len(search_content(content_repo, "alvo", limit=7)) == 7
+
+
+def test_search_content_trunca_linha_muito_longa(content_repo):
+    with open(os.path.join(content_repo, "longa.txt"), "w") as handle:
+        handle.write("alvo " + "x" * 1000 + "\n")
+
+    assert len(search_content(content_repo, "alvo")[0]["text"]) == 160
+
+
+def test_search_content_erro_real_do_git_continua_sendo_erro(tmp_path):
+    with pytest.raises(GitServiceError):
+        search_content(str(tmp_path), "qualquer")  # não é um repositório
+
+
+def test_run_git_command_aceita_codigos_de_saida_informados(git_repo):
+    # git grep sai com 1 sem resultados: com (0, 1) devolve vazio, sem (padrão) levanta.
+    assert run_git_command(git_repo, ["grep", "-F", "nada-aqui"], ok_returncodes=(0, 1)) == ""
+    with pytest.raises(GitServiceError):
+        run_git_command(git_repo, ["grep", "-F", "nada-aqui"])
+
+
+def test_read_file_for_view(content_repo):
+    assert "def calcular_imposto" in read_file_for_view(content_repo, "src/util.py")
+
+    with open(os.path.join(content_repo, "b.bin"), "wb") as handle:
+        handle.write(b"\x00\x01")
+    with pytest.raises(GitServiceError, match="binário"):
+        read_file_for_view(content_repo, "b.bin")
+    with pytest.raises(GitServiceError):
+        read_file_for_view(content_repo, "nao-existe.txt")
