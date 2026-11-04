@@ -3,8 +3,13 @@ from ui.theme import APP_COLORS
 
 
 class FileSection(ctk.CTkFrame):
-    def __init__(self, master, title: str):
+    def __init__(self, master, title: str, unchecked: set[str], on_toggle=None):
         super().__init__(master, fg_color="transparent")
+
+        # Conjunto compartilhado com o painel: caminhos desmarcados (o padrão é marcado).
+        self._unchecked = unchecked
+        self._on_toggle = on_toggle
+        self._vars: dict[str, ctk.BooleanVar] = {}
 
         self.title_label = ctk.CTkLabel(
             self,
@@ -17,25 +22,53 @@ class FileSection(ctk.CTkFrame):
         self.container = ctk.CTkFrame(self, fg_color="transparent")
         self.container.pack(fill="x", expand=False)
 
+    @staticmethod
+    def _split(file_text: str) -> tuple[str, str]:
+        status, _, path = file_text.partition(" | ")
+        return status, path
+
     def clear(self):
+        self._vars = {}
         for widget in self.container.winfo_children():
             widget.destroy()
+
+    def paths(self) -> list[str]:
+        return list(self._vars)
+
+    def sync_checks(self):
+        for path, var in self._vars.items():
+            var.set(path not in self._unchecked)
+
+    def _toggle(self, path: str):
+        if self._vars[path].get():
+            self._unchecked.discard(path)
+        else:
+            self._unchecked.add(path)
+
+        if self._on_toggle:
+            self._on_toggle()
+
+    def set_message(self, text: str):
+        self.clear()
+        label = ctk.CTkLabel(
+            self.container,
+            text=text,
+            text_color=APP_COLORS["muted"],
+            anchor="w",
+            font=ctk.CTkFont(size=11)
+        )
+        label.pack(fill="x", padx=6, pady=(0, 6))
 
     def set_files(self, files: list[str]):
         self.clear()
 
         if not files:
-            empty = ctk.CTkLabel(
-                self.container,
-                text="Nenhum arquivo",
-                text_color=APP_COLORS["muted"],
-                anchor="w",
-                font=ctk.CTkFont(size=11)
-            )
-            empty.pack(fill="x", padx=6, pady=(0, 6))
+            self.set_message("Nenhum arquivo")
             return
 
         for file_text in files:
+            status, path = self._split(file_text)
+
             item = ctk.CTkFrame(
                 self.container,
                 fg_color="#2a2f3a",
@@ -44,14 +77,20 @@ class FileSection(ctk.CTkFrame):
             )
             item.pack(fill="x", padx=4, pady=2)
 
-            label = ctk.CTkLabel(
+            var = ctk.BooleanVar(value=path not in self._unchecked)
+            self._vars[path] = var
+
+            checkbox = ctk.CTkCheckBox(
                 item,
-                text=file_text,
+                text=f"{status} | {path}",
+                variable=var,
+                command=lambda p=path: self._toggle(p),
                 text_color=APP_COLORS["text"],
-                anchor="w",
+                checkbox_width=18,
+                checkbox_height=18,
                 font=ctk.CTkFont(size=11)
             )
-            label.pack(fill="x", padx=8, pady=6)
+            checkbox.pack(fill="x", padx=8, pady=6)
 
 
 class RightPanel(ctk.CTkFrame):
@@ -64,6 +103,7 @@ class RightPanel(ctk.CTkFrame):
 
         self.commit_placeholder = "Digite a mensagem do commit..."
         self.is_placeholder_active = True
+        self._unchecked: set[str] = set()
 
         self._build_header()
         self._build_file_list()
@@ -92,10 +132,23 @@ class RightPanel(ctk.CTkFrame):
         )
         self.scroll.pack(fill="both", expand=True)
 
-        self.staged_section = FileSection(self.scroll, "Staged Files")
+        self.select_all_var = ctk.BooleanVar(value=True)
+        self.select_all_check = ctk.CTkCheckBox(
+            self.scroll,
+            text="Selecionar todos",
+            variable=self.select_all_var,
+            command=self._toggle_all,
+            text_color=APP_COLORS["muted"],
+            checkbox_width=18,
+            checkbox_height=18,
+            font=ctk.CTkFont(size=11, weight="bold")
+        )
+        self.select_all_check.pack(anchor="w", padx=8, pady=(0, 4))
+
+        self.staged_section = FileSection(self.scroll, "Staged Files", self._unchecked, self._refresh_checks)
         self.staged_section.pack(fill="x", pady=(0, 8))
 
-        self.unstaged_section = FileSection(self.scroll, "Unstaged Files")
+        self.unstaged_section = FileSection(self.scroll, "Unstaged Files", self._unchecked, self._refresh_checks)
         self.unstaged_section.pack(fill="x", pady=(0, 8))
 
     def _build_commit_area(self):
@@ -175,13 +228,41 @@ class RightPanel(ctk.CTkFrame):
         self.commit_msg.configure(text_color=APP_COLORS["muted"])
         self.is_placeholder_active = True
 
+    def _all_paths(self) -> set[str]:
+        return set(self.staged_section.paths()) | set(self.unstaged_section.paths())
+
+    def _refresh_checks(self):
+        """Mantém sincronizado o mesmo arquivo nas duas seções e o "Selecionar todos"."""
+        self.staged_section.sync_checks()
+        self.unstaged_section.sync_checks()
+        all_paths = self._all_paths()
+        self.select_all_var.set(bool(all_paths) and not (all_paths & self._unchecked))
+
+    def _toggle_all(self):
+        if self.select_all_var.get():
+            self._unchecked.clear()
+        else:
+            self._unchecked.update(self._all_paths())
+        self._refresh_checks()
+
+    def get_selected_files(self) -> list[str]:
+        return sorted(self._all_paths() - self._unchecked)
+
     def set_files_grouped(self, staged_files: list[str], unstaged_files: list[str]):
         self.staged_section.set_files(staged_files)
         self.unstaged_section.set_files(unstaged_files)
+        # Esquece desmarcações de arquivos que não estão mais alterados (ex.: já commitados).
+        self._unchecked &= self._all_paths()
+        self._refresh_checks()
+
+    def set_files_error(self, message: str):
+        self.staged_section.set_message(f"Erro: {message}")
+        self.unstaged_section.set_files([])
+        self._unchecked.clear()
+        self._refresh_checks()
 
     def set_files(self, files: list[str]):
-        self.staged_section.set_files(files)
-        self.unstaged_section.set_files([])
+        self.set_files_grouped(files, [])
 
     def get_commit_message(self) -> str:
         if self.is_placeholder_active:

@@ -33,8 +33,7 @@ from services.branch_delete_service import (
     delete_all_remote,
 )
 from services.commit_service import (
-    stage_all_changes,
-    commit_all_changes,
+    commit_selected_files,
     amend_commit,
     is_last_commit_pushed,
 )
@@ -506,7 +505,7 @@ class MainWindow(ctk.CTk):
 
             with perf.timed("UI: right_panel arquivos alterados"):
                 if snapshot.changed_files_error:
-                    self.right_panel.set_files_grouped([f"Erro: {snapshot.changed_files_error}"], [])
+                    self.right_panel.set_files_error(snapshot.changed_files_error)
                 else:
                     self.right_panel.set_files_grouped(
                         snapshot.changed_files.get("staged", []),
@@ -560,9 +559,17 @@ class MainWindow(ctk.CTk):
             )
             return
 
+        selected_files = self.right_panel.get_selected_files()
+
+        if not selected_files:
+            messagebox.showwarning(
+                "Nenhum arquivo selecionado",
+                "Marque ao menos um arquivo para incluir no commit."
+            )
+            return
+
         try:
-            stage_all_changes(self.selected_repo_path)
-            result = commit_all_changes(self.selected_repo_path, commit_message)
+            result = commit_selected_files(self.selected_repo_path, commit_message, selected_files)
 
             current_branch = get_current_branch(self.selected_repo_path)
             self.sync_branch_ui(current_branch)
@@ -585,6 +592,14 @@ class MainWindow(ctk.CTk):
 
         repo_path = self.selected_repo_path
         commit_message = self.right_panel.get_commit_message()
+        selected_files = self.right_panel.get_selected_files()
+
+        if not selected_files and not commit_message:
+            messagebox.showwarning(
+                "Nada para o amend",
+                "Marque ao menos um arquivo ou digite uma nova mensagem."
+            )
+            return
 
         def prepare():
             branch = get_current_branch(repo_path)
@@ -613,7 +628,7 @@ class MainWindow(ctk.CTk):
                 return
 
             self._run_in_background(
-                lambda: amend_commit(repo_path, commit_message),
+                lambda: amend_commit(repo_path, commit_message, selected_files),
                 lambda result: self._finish_amend(result, pushed),
                 busy_message="Executando amend...",
                 error_title="Erro no amend",
