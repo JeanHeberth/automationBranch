@@ -288,7 +288,7 @@ class LeftSidebar(ctk.CTkFrame):
         self.remote_box = self._new_box()
 
         self._section_divider()
-        cloud = SidebarSection(self.scroll, "CLOUD PATCHES", "0", expanded=True, fonts=self.fonts)
+        cloud = SidebarSection(self.scroll, "CLOUD PATCHES", "0", expanded=False, fonts=self.fonts)
         cloud.pack(fill="x", padx=0, pady=(0, 8))
 
         self._section_divider()
