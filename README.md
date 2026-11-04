@@ -13,10 +13,23 @@ Desenvolvida em Python com foco em produtividade, visual moderno e facilidade de
 - 🔄 Ações rápidas:
     - Pull
     - Push
-    - Checkout de branch
+    - Checkout de branch (se houver alterações que impeçam a troca, oferece guardá-las em stash)
     - Stash / Pop
-- 🧾 Visualização de commits
-- 📁 Arquivos alterados
+- 🧾 Visualização de commits (histórico gráfico)
+- ☑️ **Commit e amend por seleção de arquivos**: cada arquivo alterado tem um checkbox (todos
+  marcados por padrão) e há "Selecionar todos". Só o que está marcado entra no commit; o stage
+  dos demais fica intacto. Renomeações são tratadas por completo
+- 🔍 **Diff por arquivo**: clique no nome para ver o diff (staged, não staged ou arquivo novo),
+  com `+` e `-` coloridos
+- ➕ **Stage / unstage / descartar por arquivo**: botões `+`, `−` e `✕` em cada item
+  (descartar pede confirmação e é irreversível)
+- 📦 **Stashes**: botão Stash guarda só os arquivos marcados (inclui arquivos novos); lista no
+  painel com diff, Aplicar, Pop e Descartar. Conflito ao reaplicar mantém o stash e avisa
+- ✏️ Amend com proteção de branch protegida e force push guiado (`--force-with-lease`)
+- 🔀 Pull Requests: abrir, acompanhar o estado dos checks e mergear (inclusive merge automático
+  quando os checks passam)
+- 🔐 Login com GitHub (Device Flow), com token guardado no cofre do sistema
+- ⚡ Commit, stash, login e demais operações Git rodam em segundo plano, sem travar a janela
 - 🧠 Interface intuitiva estilo ferramentas profissionais
 
 ---
@@ -37,23 +50,28 @@ automationBranch/
 │   ├── top_bar.py
 │   ├── left_sidebar.py
 │   ├── center_panel.py
-│   ├── right_panel.py
-│   ├── profile_popup.py
+│   ├── right_panel.py       # Arquivos (checkboxes, stage/unstage/descartar), stashes e commit
+│   ├── diff_viewer.py       # Janela de diff com cores
+│   ├── profile_popup.py     # Janela "Conectar conta"
 │   ├── profile_menu.py
+│   ├── device_login_dialog.py  # Código do Device Flow do GitHub
 │   ├── delete_branch_popup.py
 │   └── theme.py
 ├── services/               # Lógica de negócio (Git CLI + GitHub API)
 │   ├── git_runner.py        # Wrapper de subprocess para o Git
 │   ├── branch_service.py
 │   ├── branch_delete_service.py
-│   ├── commit_service.py
-│   ├── sync_service.py      # pull / push / stash
+│   ├── commit_service.py    # commit/amend por seleção, diff, stage/unstage/descartar
+│   ├── stash_service.py     # criar, listar, aplicar, pop e descartar stashes
+│   ├── repo_snapshot.py     # coleta em paralelo o que a UI precisa redesenhar
+│   ├── sync_service.py      # pull / push
 │   ├── pull_request_service.py
-│   ├── github_auth_service.py
-│   └── session_service.py
+│   ├── auth_service.py
+│   ├── github_auth_service.py  # login via Device Flow do GitHub
+│   └── session_service.py   # sessão e token (keyring)
 ├── tests/                  # Testes com pytest
 ├── assets/
-│   └── icons/
+│   └── icons/              # ícones da interface (inclui o logo do GitHub)
 ├── requirements.txt
 ├── requirements-dev.txt    # Dependências de teste / CI
 ├── pyproject.toml
@@ -69,6 +87,8 @@ automationBranch/
 - Pillow (imagens)
 - Git CLI (via `subprocess`)
 - GitHub REST API (`requests`) para Pull Requests
+- `keyring` para guardar o token no cofre do sistema (Keychain, Credential Locker, Secret Service)
+- `python-dotenv` para ler o `.env`
 
 ---
 
@@ -101,7 +121,18 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 5. Execute o projeto
+### 5. Configure o login com GitHub (opcional)
+
+Crie um arquivo `.env` na raiz do projeto com o Client ID do seu OAuth App
+(veja [Login com GitHub](#-login-com-github)):
+
+```env
+GITHUB_CLIENT_ID=seu_client_id
+```
+
+Sem isso o app abre normalmente, mas o botão "Continuar com GitHub" avisa que falta configurar.
+
+### 6. Execute o projeto
 
 ```bash
 python main.py
@@ -131,6 +162,55 @@ pytest --cov=services --cov-report=term
 
 ---
 
+## 🔑 Login com GitHub
+
+O login usa o **Device Flow** do GitHub: não precisa de `client_secret` nem de callback local.
+
+### Configuração (uma vez)
+
+1. No GitHub: **Settings → Developer settings → OAuth Apps → New OAuth App**
+   (https://github.com/settings/developers).
+   - **Application name:** `Automation Branch`
+   - **Homepage URL** e **Authorization callback URL:** `http://127.0.0.1`
+     (o Device Flow não usa o callback, mas o campo é obrigatório)
+2. Marque **Enable Device Flow** (no formulário ou na página do app, salvando em
+   **Update application**). Sem isso o login falha com "Device Flow desativado".
+3. Copie o **Client ID** (não precisa gerar o Client Secret) e coloque no `.env`:
+
+```env
+GITHUB_CLIENT_ID=seu_client_id
+
+# Opcional: escopos pedidos ao GitHub (padrão: "repo user:email")
+# GITHUB_OAUTH_SCOPES="repo user:email"
+```
+
+O `.env` já está no `.gitignore`. Reinicie o app depois de editá-lo, pois ele só é lido na
+inicialização. Se o OAuth App for de uma organização com restrição de acesso a apps, um
+administrador precisa aprová-lo na primeira vez.
+
+### Como usar
+
+1. Ícone de perfil → **Conectar conta** → **Continuar com GitHub**.
+2. O navegador abre em `github.com/login/device` e o app mostra o código. Use **Copiar código**
+   e cole na página do GitHub.
+3. Clique em **Authorize**. O app fecha o diálogo sozinho e mostra a conta conectada.
+   **Cancelar** interrompe a espera a qualquer momento.
+
+### Onde fica o token
+
+- Em um cofre do sistema, via `keyring`: Keychain (macOS), Credential Locker (Windows) ou
+  Secret Service (Linux). O arquivo de sessão guarda só o perfil (nome, e-mail, avatar).
+- Sem cofre disponível, cai para o arquivo de sessão com permissão restrita ao usuário (`600`).
+- Sessões antigas, com o token em texto puro, são migradas para o cofre automaticamente.
+- Pasta de dados: `~/Library/Application Support/AutomationBranch` (macOS),
+  `%APPDATA%\AutomationBranch` (Windows) ou `~/.config/AutomationBranch` (Linux).
+- No macOS, na primeira leitura o Keychain pode pedir permissão: escolha **Sempre permitir**.
+
+Sem fazer login, o app ainda usa `GITHUB_TOKEN`/`GH_TOKEN` do ambiente (ou do `.env`) para
+as operações de Pull Request.
+
+---
+
 ## 🧠 Roadmap
 
 ### ✅ Concluído
@@ -141,11 +221,16 @@ pytest --cov=services --cov-report=term
 - [x] Histórico gráfico de commits
 - [x] Integração com GitHub API (abrir e mergear Pull Requests)
 - [x] Suporte multi-repositório
-- [x] Login via OAuth do GitHub
+- [x] Login via OAuth do GitHub (Device Flow, sem client secret)
+- [x] Token guardado no cofre do sistema (Keychain / Credential Locker) via `keyring`
+- [x] Commit e amend por seleção de arquivos (checkbox)
+- [x] Diff por arquivo
+- [x] Stage / unstage / descartar alterações por arquivo
+- [x] Stash com lista, diff, aplicar, pop e descartar
+- [x] Commit e login em segundo plano (sem travar a janela)
 
 ### 🔥 Em desenvolvimento
 - [ ] Operações de rede fora da thread da UI (evitar travamento da janela)
-- [ ] Armazenar o token em keychain (`keyring`) em vez de JSON em texto puro
 - [ ] Aumentar a cobertura de testes
 
 ### 💡 Futuro

@@ -1,17 +1,16 @@
 import customtkinter as ctk
-from ui.theme import APP_COLORS
+from ui.theme import APP_COLORS, load_icon
 
 
 class ProfileConnectPopup(ctk.CTkToplevel):
-    def __init__(self, master, on_github, on_google, on_close=None):
+    def __init__(self, master, on_github, on_close=None):
         super().__init__(master)
 
         self.on_github = on_github
-        self.on_google = on_google
         self.on_close = on_close
 
         self.title("Conectar conta")
-        self.geometry("420x270")
+        self.geometry("440x270")
         self.resizable(False, False)
         self.configure(fg_color=APP_COLORS["panel"])
 
@@ -40,45 +39,28 @@ class ProfileConnectPopup(ctk.CTkToplevel):
 
         ctk.CTkLabel(
             container,
-            text="Escolha como deseja entrar no Automation Branch.",
+            text="Entre com sua conta para usar os recursos do GitHub.",
             text_color=APP_COLORS["muted"],
             font=ctk.CTkFont(size=13),
             justify="left"
         ).pack(anchor="w", pady=(0, 18))
 
-        github_btn = ctk.CTkButton(
+        self._provider_button(
             container,
             text="Continuar com GitHub",
-            height=42,
-            fg_color="#2563EB",
-            hover_color="#3B82F6",
+            icon="github.png",
+            fg_color="#24292F",
+            hover_color="#32383F",
             text_color="#FFFFFF",
-            corner_radius=10,
-            font=ctk.CTkFont(size=13, weight="bold"),
-            command=self._handle_github
-        )
-        github_btn.pack(fill="x", pady=(0, 10))
+            command=self._handle_github,
+        ).pack(fill="x", pady=(0, 12))
 
-        google_btn = ctk.CTkButton(
+        ctk.CTkLabel(
             container,
-            text="Continuar com Google",
-            height=42,
-            fg_color="#374151",
-            hover_color="#4B5563",
-            text_color=APP_COLORS["text"],
-            corner_radius=10,
-            font=ctk.CTkFont(size=13, weight="bold"),
-            command=self._handle_google
-        )
-        google_btn.pack(fill="x", pady=(0, 14))
-
-        helper = ctk.CTkLabel(
-            container,
-            text="GitHub é o mais indicado para PR, branch e merge.",
+            text="Necessário para abrir e mesclar Pull Requests.",
             text_color=APP_COLORS["muted"],
             font=ctk.CTkFont(size=12)
-        )
-        helper.pack(anchor="w", pady=(0, 18))
+        ).pack(anchor="w", pady=(0, 18))
 
         cancel_btn = ctk.CTkButton(
             container,
@@ -94,6 +76,25 @@ class ProfileConnectPopup(ctk.CTkToplevel):
             command=self._handle_close
         )
         cancel_btn.pack(fill="x")
+
+    @staticmethod
+    def _provider_button(parent, text, icon, fg_color, hover_color, text_color, command):
+        """Botão de provedor: logo à esquerda e texto centralizado."""
+        return ctk.CTkButton(
+            parent,
+            text=text,
+            image=load_icon(icon, size=(20, 20), padding=0),
+            compound="left",
+            height=46,
+            fg_color=fg_color,
+            hover_color=hover_color,
+            text_color=text_color,
+            border_width=1,
+            border_color=APP_COLORS["border"],
+            corner_radius=10,
+            font=ctk.CTkFont(size=13, weight="bold"),
+            command=command
+        )
 
     def _center(self, master):
         self.update_idletasks()
@@ -114,11 +115,6 @@ class ProfileConnectPopup(ctk.CTkToplevel):
     def _handle_github(self):
         if self.on_github:
             self.on_github()
-        self.destroy()
-
-    def _handle_google(self):
-        if self.on_google:
-            self.on_google()
         self.destroy()
 
     def _handle_close(self):
