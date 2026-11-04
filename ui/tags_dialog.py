@@ -1,5 +1,7 @@
 import customtkinter as ctk
 
+from ui.window_position import center_on_master
+
 from ui.theme import APP_COLORS
 
 
@@ -85,10 +87,7 @@ class TagsDialog(ctk.CTkToplevel):
             ).pack(side="right", padx=(0, 6), pady=8)
 
     def _center(self, master):
-        self.update_idletasks()
-        x = master.winfo_rootx() + (master.winfo_width() - self.winfo_width()) // 2
-        y = master.winfo_rooty() + 60
-        self.geometry(f"+{max(x, 0)}+{max(y, 0)}")
+        center_on_master(self, master, top_offset=60)
 
     def _take_focus(self):
         if self.winfo_exists():

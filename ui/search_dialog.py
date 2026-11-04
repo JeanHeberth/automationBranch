@@ -3,6 +3,8 @@ from tkinter import TclError
 
 import customtkinter as ctk
 
+from ui.window_position import center_on_master
+
 from services.branch_service import get_local_and_remote_branches
 from services.pull_request_service import (
     filter_pull_requests,
@@ -141,10 +143,7 @@ class SearchDialog(ctk.CTkToplevel):
         self.footer.pack(fill="x", padx=16, pady=(0, 10))
 
     def _center(self, master):
-        self.update_idletasks()
-        x = master.winfo_rootx() + (master.winfo_width() - self.winfo_width()) // 2
-        y = master.winfo_rooty() + 80
-        self.geometry(f"+{max(x, 0)}+{max(y, 0)}")
+        center_on_master(self, master, top_offset=80)
 
     def focus_entry(self):
         if not self.winfo_exists():

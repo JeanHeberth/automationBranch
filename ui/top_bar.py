@@ -1,4 +1,7 @@
+import tkinter as tk
+
 import customtkinter as ctk
+from ui.center_panel import HoverTooltip
 from ui.theme import APP_COLORS, load_icon
 
 
@@ -75,6 +78,7 @@ class TopBar(ctk.CTkFrame):
             command=self.on_select_repo,
             width=64
         )
+        HoverTooltip(self.open_repo_btn, lambda: "Abrir repositório")
         self.open_repo_btn.pack(side="left")
 
         branch_block = ctk.CTkFrame(self.left_wrapper, fg_color="transparent")
@@ -112,6 +116,7 @@ class TopBar(ctk.CTkFrame):
             icon="refresh.png",
             command=lambda: self.on_action("Refresh")
         )
+        HoverTooltip(self.refresh_btn, lambda: "Atualizar")
         self.refresh_btn.pack(side="left")
 
     # =========================
@@ -166,6 +171,7 @@ class TopBar(ctk.CTkFrame):
                     icon=icon,
                     command=lambda a=label: self.on_action(a)
                 )
+                HoverTooltip(btn, lambda a=label: a)
                 btn.grid(row=0, column=idx, padx=1)
 
             col += 1
@@ -179,6 +185,34 @@ class TopBar(ctk.CTkFrame):
                 )
                 sep.grid(row=0, column=col, padx=5, pady=7, sticky="ns")
                 col += 1
+
+        if self.hidden_actions:
+            self.more_btn = ctk.CTkButton(
+                self.center_wrapper, text="⋯", width=30, height=30,
+                fg_color="transparent", hover_color="#2e3948", text_color=APP_COLORS["text"],
+                corner_radius=8, font=ctk.CTkFont(size=16, weight="bold"),
+                command=self._show_hidden_menu,
+            )
+            HoverTooltip(self.more_btn, lambda: "Mais ações")
+            self.more_btn.grid(row=0, column=col, padx=(6, 1))
+
+    def _show_hidden_menu(self):
+        """Menu com os botões que não cabem na barra nesta largura."""
+        menu = tk.Menu(
+            self, tearoff=0,
+            bg="#111827", fg=APP_COLORS["text"],
+            activebackground="#1f2937", activeforeground=APP_COLORS["text"],
+            bd=0, font=("TkDefaultFont", 11),
+        )
+        for label in self.hidden_actions:
+            menu.add_command(label=label, command=lambda a=label: self.on_action(a))
+
+        x = self.more_btn.winfo_rootx()
+        y = self.more_btn.winfo_rooty() + self.more_btn.winfo_height() + 4
+        try:
+            menu.tk_popup(x, y)
+        finally:
+            menu.grab_release()
 
     def _get_visible_center_actions(self):
         width = max(self.center_wrapper.winfo_width(), 1)
@@ -227,6 +261,7 @@ class TopBar(ctk.CTkFrame):
             command=lambda: self.on_action("Actions"),
             width=32
         )
+        HoverTooltip(self.actions_btn, lambda: "Actions")
         self.actions_btn.pack(side="left", padx=(0, 4))
 
         self.search_btn = self._create_secondary_button(
@@ -236,6 +271,7 @@ class TopBar(ctk.CTkFrame):
             command=lambda: self.on_action("Search"),
             width=32
         )
+        HoverTooltip(self.search_btn, lambda: "Buscar")
         self.search_btn.pack(side="left", padx=(0, 4))
 
         self.profile_btn = self._create_secondary_button(
@@ -245,6 +281,7 @@ class TopBar(ctk.CTkFrame):
             command=lambda: self.on_action("Profile"),
             width=32
         )
+        HoverTooltip(self.profile_btn, lambda: "Conta")
         self.profile_btn.pack(side="left")
 
     # =========================

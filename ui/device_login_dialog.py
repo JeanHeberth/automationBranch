@@ -2,6 +2,8 @@ import webbrowser
 
 import customtkinter as ctk
 
+from ui.window_position import center_on_master
+
 from ui.theme import APP_COLORS, load_icon
 
 
@@ -117,10 +119,7 @@ class DeviceLoginDialog(ctk.CTkToplevel):
         ).pack(fill="x")
 
     def _center(self, master):
-        self.update_idletasks()
-        x = master.winfo_rootx() + (master.winfo_width() - self.winfo_width()) // 2
-        y = master.winfo_rooty() + (master.winfo_height() - self.winfo_height()) // 2
-        self.geometry(f"+{max(x, 0)}+{max(y, 0)}")
+        center_on_master(self, master)
 
     def _take_focus(self):
         if not self.winfo_exists():
