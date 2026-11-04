@@ -1,4 +1,6 @@
 import customtkinter as ctk
+
+from ui.window_position import center_on_master
 from ui.center_panel import HoverTooltip
 from ui.theme import APP_COLORS
 
@@ -205,25 +207,7 @@ class DeleteBranchPopup(ctk.CTkToplevel):
         confirm_btn.pack(side="left", fill="x", expand=True, padx=(6, 0))
 
     def _center(self, master):
-        self.update_idletasks()
-
-        width = self.winfo_width()
-        height = self.winfo_height()
-
-        master_x = master.winfo_rootx()
-        master_y = master.winfo_rooty()
-        master_width = master.winfo_width()
-        master_height = master.winfo_height()
-
-        x = master_x + (master_width - width) // 2
-        y = master_y + (master_height - height) // 2
-
-        # Mantém a janela inteira (incluindo rodapé) dentro da área visível da tela.
-        max_y = self.winfo_screenheight() - height - 120
-        x = max(x, 0)
-        y = max(min(y, max_y), 0)
-
-        self.geometry(f"{width}x{height}+{x}+{y}")
+        center_on_master(self, master)
 
     def _get_current_branch_source(self) -> list[str]:
         if self.location_var.get() == "local":
