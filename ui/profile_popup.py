@@ -7,6 +7,7 @@ from ui.theme import APP_COLORS, load_icon
 class ProfileConnectPopup(ctk.CTkToplevel):
     def __init__(self, master, on_github, on_close=None):
         super().__init__(master)
+        self.withdraw()  # exibida só depois de posicionada (ver center_on_master)
 
         self.on_github = on_github
         self.on_close = on_close
@@ -17,10 +18,10 @@ class ProfileConnectPopup(ctk.CTkToplevel):
         self.configure(fg_color=APP_COLORS["panel"])
 
         self.transient(master)
-        self.grab_set()
 
         self._build_ui()
         self._center(master)
+        self.after(150, self.grab_set)
 
         self.protocol("WM_DELETE_WINDOW", self._handle_close)
 

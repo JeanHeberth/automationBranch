@@ -13,6 +13,7 @@ class ReflogDialog(ctk.CTkToplevel):
 
     def __init__(self, master, entries: list[dict], on_view, on_branch, on_reset):
         super().__init__(master)
+        self.withdraw()  # exibida só depois de posicionada (ver center_on_master)
 
         self.entries = entries
         self.on_view = on_view

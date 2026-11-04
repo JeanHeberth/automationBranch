@@ -10,6 +10,7 @@ class TagsDialog(ctk.CTkToplevel):
 
     def __init__(self, master, tags: list[dict], on_action, on_new):
         super().__init__(master)
+        self.withdraw()  # exibida só depois de posicionada (ver center_on_master)
 
         self.on_action = on_action  # on_action(action, name): "push" | "delete" | "delete_remote"
         self.on_new = on_new
