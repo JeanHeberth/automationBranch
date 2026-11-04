@@ -1,4 +1,5 @@
 import os
+import sys
 import threading
 import webbrowser
 from concurrent.futures import ThreadPoolExecutor
@@ -11,6 +12,7 @@ from ui.left_sidebar import LeftSidebar
 from ui.center_panel import CenterPanel
 from ui.right_panel import RightPanel
 from ui.diff_viewer import DiffViewer
+from ui.search_dialog import SearchDialog
 from ui.profile_popup import ProfileConnectPopup
 from ui.device_login_dialog import DeviceLoginDialog
 from ui.profile_menu import ProfileMenu
@@ -37,6 +39,7 @@ from services.branch_delete_service import (
 from services.commit_service import (
     commit_selected_files,
     get_file_diff,
+    get_commit_diff,
     stage_files,
     unstage_files,
     discard_changes,
@@ -105,6 +108,7 @@ class MainWindow(ctk.CTk):
         self.profile_menu_popup = None
         self._login_in_progress = False
         self._login_dialog = None
+        self._search_dialog = None
         # Evita disparar duas operações Git de rede ao mesmo tempo.
         self._bg_busy = False
         # Identifica a atualização mais recente da UI (descarta resultados atrasados).
@@ -162,6 +166,7 @@ class MainWindow(ctk.CTk):
         )
         self.status_label.grid(row=2, column=0, columnspan=3, sticky="ew")
 
+        self._bind_search_shortcut()
         self._load_initial_data()
         self._refresh_profile_ui()
 
@@ -201,6 +206,53 @@ class MainWindow(ctk.CTk):
         self.center_panel.set_commit_rows([])
         self.right_panel.set_files_grouped([], [])
         self.right_panel.set_stashes([])
+
+    def _bind_search_shortcut(self):
+        # Cmd+K no macOS, Ctrl+K nos demais. No macOS o Ctrl+K é "apagar até o fim da linha" nos
+        # campos de texto, por isso não é usado lá.
+        sequence = "<Command-k>" if sys.platform == "darwin" else "<Control-k>"
+        try:
+            self.bind_all(sequence, lambda _event: self._open_search_dialog())
+        except TclError:
+            pass
+
+    def _open_search_dialog(self):
+        if not self.selected_repo_path:
+            messagebox.showwarning(
+                "Repositório não selecionado",
+                "Selecione um repositório antes de buscar."
+            )
+            return
+
+        if self._search_dialog is not None and self._search_dialog.winfo_exists():
+            self._search_dialog.focus_entry()
+            return
+
+        self._search_dialog = SearchDialog(
+            self,
+            self.selected_repo_path,
+            on_open_commit=self._show_commit_diff,
+            on_checkout_branch=self._checkout_from_search,
+        )
+
+    def _show_commit_diff(self, commit_hash: str, subject: str):
+        repo_path = self.selected_repo_path
+
+        def runner():
+            try:
+                diff = get_commit_diff(repo_path, commit_hash)
+            except Exception as exc:
+                self._safe_after(lambda e=exc: messagebox.showerror("Erro ao carregar commit", str(e)))
+            else:
+                self._safe_after(lambda: DiffViewer(self, f"{commit_hash}  {subject}", diff))
+
+        # Só leitura: não usa o bloqueio de operações Git.
+        threading.Thread(target=runner, daemon=True).start()
+
+    def _checkout_from_search(self, branch_name: str, is_remote: bool):
+        # "origin/feature/x" vira "feature/x": o git cria a branch local rastreando a remota.
+        target = branch_name.split("/", 1)[1] if is_remote else branch_name
+        self.perform_branch_checkout(target)
 
     def _refresh_profile_ui(self):
         session = get_current_session()
@@ -1434,6 +1486,10 @@ class MainWindow(ctk.CTk):
             self._open_profile_menu()
             return
 
+        if action_name == "Search":
+            self._open_search_dialog()
+            return
+
         if not self.selected_repo_path and action_name in {"Pull", "Push", "Branch", "Stash", "Pop", "Refresh", "Delete Branch"}:
             messagebox.showwarning(
                 "Repositório não selecionado",
@@ -1525,8 +1581,6 @@ class MainWindow(ctk.CTk):
                 messagebox.showinfo("Redo", "Função de refazer ainda será implementada.")
             elif action_name == "Actions":
                 messagebox.showinfo("Actions", "Menu de ações extras ainda será implementado.")
-            elif action_name == "Search":
-                messagebox.showinfo("Search", "Busca ainda será implementada.")
 
         except ValueError as exc:
             messagebox.showwarning("Entrada inválida", str(exc))
