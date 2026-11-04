@@ -32,6 +32,9 @@ def run_git_command(
                 ["git", "-C", repo_path, *args],
                 capture_output=True,
                 text=True,
+                # Git emite UTF-8; sem isso o Windows decodifica como cp1252 (mojibake).
+                encoding="utf-8",
+                errors="replace",
                 check=True,
                 timeout=timeout,
                 creationflags=_CREATIONFLAGS,
