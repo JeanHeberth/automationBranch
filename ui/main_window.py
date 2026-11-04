@@ -13,6 +13,7 @@ from ui.center_panel import CenterPanel
 from ui.right_panel import RightPanel
 from ui.diff_viewer import DiffViewer
 from ui.search_dialog import SearchDialog
+from ui.actions_controller import ActionsController
 from ui.file_viewer import FileViewer
 from services.search_service import read_file_for_view
 from ui.profile_popup import ProfileConnectPopup
@@ -111,6 +112,7 @@ class MainWindow(ctk.CTk):
         self._login_in_progress = False
         self._login_dialog = None
         self._search_dialog = None
+        self.actions = ActionsController(self)
         # Evita disparar duas operações Git de rede ao mesmo tempo.
         self._bg_busy = False
         # Identifica a atualização mais recente da UI (descarta resultados atrasados).
@@ -1485,7 +1487,11 @@ class MainWindow(ctk.CTk):
         self.set_status(f"Ação executada: {action_name}")
 
         if action_name == "Terminal":
-            messagebox.showinfo("Terminal", "Depois podemos conectar isso ao terminal real.")
+            self.actions.open_terminal()
+            return
+
+        if action_name == "Actions":
+            self.actions.show_menu()
             return
 
         if action_name == "Open PR":
@@ -1594,11 +1600,9 @@ class MainWindow(ctk.CTk):
                 messagebox.showinfo("Refresh", "Dados atualizados com sucesso.")
 
             elif action_name == "Undo":
-                messagebox.showinfo("Undo", "Função de desfazer ainda será implementada.")
+                self.actions.undo_commit()
             elif action_name == "Redo":
-                messagebox.showinfo("Redo", "Função de refazer ainda será implementada.")
-            elif action_name == "Actions":
-                messagebox.showinfo("Actions", "Menu de ações extras ainda será implementado.")
+                self.actions.redo_commit()
 
         except ValueError as exc:
             messagebox.showwarning("Entrada inválida", str(exc))
@@ -1620,6 +1624,10 @@ class MainWindow(ctk.CTk):
             )
             return
 
+        self.select_repository(folder)
+
+    def select_repository(self, folder: str):
+        """Torna `folder` (um repositório Git válido) o repositório atual."""
         repo_name = os.path.basename(folder)
         self.repositories[repo_name] = folder
         self.selected_repo_path = folder

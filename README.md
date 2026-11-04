@@ -13,7 +13,8 @@ Desenvolvida em Python com foco em produtividade, visual moderno e facilidade de
 - 🔄 Ações rápidas:
     - Pull
     - Push
-    - Checkout de branch (se houver alterações que impeçam a troca, oferece guardá-las em stash)
+    - Checkout de branch (se houver alterações que impeçam a troca, oferece guardá-las em stash;
+      o stash **não é reaplicado sozinho**: use Aplicar ou Pop na lista de Stashes, e não Descartar)
     - Stash / Pop
 - 🧾 Visualização de commits (histórico gráfico)
 - ☑️ **Commit e amend por seleção de arquivos**: cada arquivo alterado tem um checkbox (todos
@@ -34,6 +35,23 @@ Desenvolvida em Python com foco em produtividade, visual moderno e facilidade de
       abre o PR no navegador
     - **Conteúdo** dos arquivos (`git grep`, ignora binários e o `.gitignore`); escolher abre o
       arquivo na linha encontrada
+- ⚙️ **Painel de ações** (ícone de ações do topo), no tema do app, com ícones e os grupos à vista:
+    - **Sincronizar:** Fetch (todos os remotos, com prune) e Pull com rebase (com `--autostash`)
+    - **Integrar:** Merge e Rebase de uma branch, Cherry-pick e Revert de um commit (o commit é
+      escolhido na própria busca). Se parar em conflito, o app avisa e o painel mostra no topo
+      **Continuar** e **Abortar** a operação em andamento
+    - **Branches, tags e histórico:** renomear a branch atual, limpar branches já mescladas,
+      **Gerenciar tags** (criar, enviar e apagar, locais e remotas) e o **Reflog**, com o
+      histórico do HEAD, ver commit, criar branch no ponto e voltar a ele
+    - O painel complementa a barra do topo e não repete o que ela já faz. **Undo** desfaz o
+      último commit (mantém as alterações em stage) e **Redo** o traz de volta; o Redo só vale
+      logo depois de um Undo (com outro commit no meio, use o Reflog). O botão **Terminal** do
+      topo abre o terminal na pasta do repositório
+    - **Repositório:** abrir o repositório ou a branch no GitHub, copiar a URL, abrir no editor
+      (`AUTOMATION_EDITOR` define qual; o padrão é o VS Code), clonar e inicializar repositórios
+- 🛡️ Ações que reescrevem histórico (rebase, desfazer commit, voltar no reflog) são bloqueadas
+  em branches protegidas (`main`, `master`, `develop`) e `reset --hard` recusa alterações não
+  commitadas, para nada ser perdido
 - ✏️ Amend com proteção de branch protegida e force push guiado (`--force-with-lease`)
 - 🔀 Pull Requests: abrir, acompanhar o estado dos checks e mergear (inclusive merge automático
   quando os checks passam). Dá para abrir PR a partir de qualquer branch, inclusive `develop → main`;
@@ -63,6 +81,11 @@ automationBranch/
 │   ├── right_panel.py       # Arquivos (checkboxes, stage/unstage/descartar), stashes e commit
 │   ├── diff_viewer.py       # Janela de diff com cores
 │   ├── search_dialog.py     # Busca global (commits, arquivos, branches, PRs, conteúdo)
+│   ├── actions_menu.py      # Conteúdo do painel de ações (grupos, rótulos, ícones)
+│   ├── actions_panel.py     # Painel flutuante de ações (desenha a partir do actions_menu)
+│   ├── actions_controller.py # O que cada ação do painel faz (confirmações, segundo plano, conflitos)
+│   ├── reflog_dialog.py     # Histórico do HEAD
+│   ├── tags_dialog.py       # Lista de tags (enviar, apagar)
 │   ├── file_viewer.py       # Arquivo com número de linha e linha destacada
 │   ├── profile_popup.py     # Janela "Conectar conta"
 │   ├── profile_menu.py
@@ -77,6 +100,8 @@ automationBranch/
 │   ├── branch_delete_service.py
 │   ├── commit_service.py    # commit/amend por seleção, diff, stage/unstage/descartar
 │   ├── stash_service.py     # criar, listar, aplicar, pop e descartar stashes
+│   ├── git_actions_service.py # fetch, merge, rebase, cherry-pick, revert, reflog, tags, clonar...
+│   ├── system_service.py    # abrir terminal e editor; links do GitHub
 │   ├── search_service.py    # busca de commits, arquivos, branches e conteúdo (git grep)
 │   ├── repo_snapshot.py     # coleta em paralelo o que a UI precisa redesenhar
 │   ├── sync_service.py      # pull / push
@@ -87,7 +112,7 @@ automationBranch/
 │   └── perf.py              # medição de desempenho (AUTOMATION_PERF=1)
 ├── tests/                  # Testes com pytest, usando repositórios Git reais e temporários
 ├── assets/
-│   └── icons/              # ícones da interface (inclui o logo do GitHub)
+│   └── icons/              # ícones da interface (traço fino, #E5E7EB, 64x64) e o logo do GitHub
 ├── requirements.txt
 ├── requirements-dev.txt    # Dependências de teste / CI
 ├── pyproject.toml
@@ -153,6 +178,21 @@ Sem isso o app abre normalmente, mas o botão "Continuar com GitHub" avisa que f
 ```bash
 python main.py
 ```
+
+---
+
+## 🔧 Variáveis de ambiente
+
+Todas são opcionais e podem ficar no `.env` da raiz do projeto (lido na inicialização).
+
+| Variável | Para que serve | Padrão |
+|---|---|---|
+| `GITHUB_CLIENT_ID` | Client ID do OAuth App, necessário para o login com GitHub | — |
+| `GITHUB_OAUTH_SCOPES` | Escopos pedidos ao GitHub no login | `repo user:email` |
+| `GITHUB_TOKEN` / `GH_TOKEN` | Token usado nas operações de Pull Request quando não há login | — |
+| `AUTOMATION_EDITOR` | Comando do editor da ação "Abrir no editor" (ex.: `idea`, `code -n`) | VS Code (`code`) |
+| `AUTOMATION_PERF` | `1` liga o registro de desempenho (tempo dos comandos git e da interface) | desligado |
+| `AUTOMATION_PERF_LOG` | Arquivo do registro de desempenho | `automation_perf.log` |
 
 ---
 
@@ -254,6 +294,8 @@ as operações de Pull Request.
 - [x] Stage / unstage / descartar alterações por arquivo
 - [x] Stash com lista, diff, aplicar, pop e descartar
 - [x] Busca global de commits, arquivos, branches, Pull Requests e conteúdo dos arquivos
+- [x] Undo / Redo do topo (desfazer e refazer commit)
+- [x] Painel de ações: fetch, merge, rebase, cherry-pick, revert, reflog, tags, abrir no GitHub/editor, clonar
 - [x] Commit e login em segundo plano (sem travar a janela)
 
 ### 🔥 Em desenvolvimento
@@ -262,8 +304,7 @@ as operações de Pull Request.
 
 ### 💡 Futuro
 - [ ] Interface ainda mais próxima do GitKraken
-- [ ] Terminal integrado
-- [ ] Desfazer / refazer (undo / redo)
+- [ ] Terminal integrado dentro da janela (hoje o botão abre o terminal do sistema)
 
 ---
 

@@ -32,18 +32,6 @@ def _check_folder(path: str) -> None:
         raise GitServiceError(f"A pasta não existe: {path}")
 
 
-def open_folder(path: str) -> None:
-    """Abre a pasta no Finder, no Explorer ou no gerenciador de arquivos do Linux."""
-    _check_folder(path)
-
-    if sys.platform == "darwin":
-        _spawn(["open", path])
-    elif sys.platform == "win32":
-        os.startfile(path)  # noqa: S606 - abre a pasta no Explorer; só existe no Windows
-    else:
-        _spawn(["xdg-open", path])
-
-
 def open_terminal(path: str) -> None:
     """Abre um terminal já dentro da pasta."""
     _check_folder(path)
