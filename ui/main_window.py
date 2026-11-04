@@ -922,10 +922,11 @@ class MainWindow(ctk.CTk):
         repo_path = self.selected_repo_path
         current_branch = get_current_branch(repo_path)
 
-        if is_protected(current_branch):
+        # Só as branches de destino final não abrem PR. A develop é origem legítima (develop -> main).
+        if current_branch.lower() in ("main", "master"):
             messagebox.showwarning(
                 "Branch inválida",
-                f"Não faz sentido abrir PR a partir da branch protegida {current_branch}."
+                f"Não faz sentido abrir PR da branch {current_branch} para ela mesma."
             )
             return
 
