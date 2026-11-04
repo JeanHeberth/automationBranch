@@ -61,3 +61,32 @@ def test_fluxo_push_amend_force_with_lease(repo):
 
     git_push_force_with_lease(repo)
     assert _git(repo, "rev-parse", "HEAD") == _git(repo, "rev-parse", "@{u}")
+
+
+def test_amend_com_paths_inclui_so_selecionados(repo):
+    (open(f"{repo}/b.txt", "w")).write("2")
+    (open(f"{repo}/c.txt", "w")).write("3")
+    _git(repo, "add", "c.txt")
+
+    amend_commit(repo, None, ["b.txt"])
+
+    files = _git(repo, "show", "--name-only", "--format=").splitlines()
+    assert "b.txt" in files and "c.txt" not in files
+    assert _git(repo, "diff", "--cached", "--name-only") == "c.txt"
+    assert _git(repo, "log", "-1", "--format=%s") == "primeiro"
+
+
+def test_amend_com_lista_vazia_altera_so_mensagem(repo):
+    (open(f"{repo}/b.txt", "w")).write("2")
+    _git(repo, "add", "b.txt")
+
+    amend_commit(repo, "nova", [])
+
+    assert _git(repo, "log", "-1", "--format=%s") == "nova"
+    assert "b.txt" not in _git(repo, "show", "--name-only", "--format=")
+    assert _git(repo, "diff", "--cached", "--name-only") == "b.txt"
+
+
+def test_amend_lista_vazia_sem_mensagem_falha(repo):
+    with pytest.raises(GitServiceError):
+        amend_commit(repo, None, [])

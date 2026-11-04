@@ -82,3 +82,57 @@ def test_get_recent_commit_rows_ignora_linhas_sem_separador(monkeypatch):
 
     rows = get_recent_commit_rows("/repo", "main")
     assert len(rows) == 1
+
+
+def _git_out(repo, *args):
+    import subprocess
+    return subprocess.run(
+        ["git", "-C", repo, *args], check=True, capture_output=True, text=True
+    ).stdout.strip()
+
+
+def test_commit_selected_files_commita_so_selecionados(git_repo):
+    from services.commit_service import commit_selected_files
+
+    (open(f"{git_repo}/a.txt", "w")).write("a")
+    (open(f"{git_repo}/b.txt", "w")).write("b")
+    (open(f"{git_repo}/README.md", "a")).write("mais\n")
+
+    commit_selected_files(git_repo, "so a", ["a.txt"])
+
+    assert _git_out(git_repo, "show", "--name-only", "--format=").splitlines() == ["a.txt"]
+    status = _git_out(git_repo, "status", "--short")
+    assert "b.txt" in status and "README.md" in status
+
+
+def test_commit_selected_files_preserva_stage_de_nao_selecionados(git_repo):
+    from services.commit_service import commit_selected_files
+
+    (open(f"{git_repo}/a.txt", "w")).write("a")
+    (open(f"{git_repo}/b.txt", "w")).write("b")
+    _git_out(git_repo, "add", "b.txt")
+
+    commit_selected_files(git_repo, "so a", ["a.txt"])
+
+    assert _git_out(git_repo, "diff", "--cached", "--name-only") == "b.txt"
+
+
+def test_commit_selected_files_inclui_renomeacao_completa(git_repo):
+    from services.commit_service import commit_selected_files
+
+    _git_out(git_repo, "mv", "README.md", "LEIAME.md")
+
+    commit_selected_files(git_repo, "renomeia", ["LEIAME.md"])
+
+    assert _git_out(git_repo, "status", "--short") == ""
+
+
+def test_commit_selected_files_valida_entradas(git_repo):
+    import pytest
+    from services.commit_service import commit_selected_files
+    from services.git_runner import GitServiceError
+
+    with pytest.raises(GitServiceError):
+        commit_selected_files(git_repo, "  ", ["a.txt"])
+    with pytest.raises(GitServiceError):
+        commit_selected_files(git_repo, "msg", [])
