@@ -1,6 +1,7 @@
 import tkinter as tk
 
 import customtkinter as ctk
+from ui.center_panel import HoverTooltip
 from ui.theme import APP_COLORS, load_icon
 
 
@@ -77,6 +78,7 @@ class TopBar(ctk.CTkFrame):
             command=self.on_select_repo,
             width=64
         )
+        HoverTooltip(self.open_repo_btn, lambda: "Abrir repositório")
         self.open_repo_btn.pack(side="left")
 
         branch_block = ctk.CTkFrame(self.left_wrapper, fg_color="transparent")
@@ -114,6 +116,7 @@ class TopBar(ctk.CTkFrame):
             icon="refresh.png",
             command=lambda: self.on_action("Refresh")
         )
+        HoverTooltip(self.refresh_btn, lambda: "Atualizar")
         self.refresh_btn.pack(side="left")
 
     # =========================
@@ -168,6 +171,7 @@ class TopBar(ctk.CTkFrame):
                     icon=icon,
                     command=lambda a=label: self.on_action(a)
                 )
+                HoverTooltip(btn, lambda a=label: a)
                 btn.grid(row=0, column=idx, padx=1)
 
             col += 1
@@ -189,6 +193,7 @@ class TopBar(ctk.CTkFrame):
                 corner_radius=8, font=ctk.CTkFont(size=16, weight="bold"),
                 command=self._show_hidden_menu,
             )
+            HoverTooltip(self.more_btn, lambda: "Mais ações")
             self.more_btn.grid(row=0, column=col, padx=(6, 1))
 
     def _show_hidden_menu(self):
@@ -256,6 +261,7 @@ class TopBar(ctk.CTkFrame):
             command=lambda: self.on_action("Actions"),
             width=32
         )
+        HoverTooltip(self.actions_btn, lambda: "Actions")
         self.actions_btn.pack(side="left", padx=(0, 4))
 
         self.search_btn = self._create_secondary_button(
@@ -265,6 +271,7 @@ class TopBar(ctk.CTkFrame):
             command=lambda: self.on_action("Search"),
             width=32
         )
+        HoverTooltip(self.search_btn, lambda: "Buscar")
         self.search_btn.pack(side="left", padx=(0, 4))
 
         self.profile_btn = self._create_secondary_button(
@@ -274,6 +281,7 @@ class TopBar(ctk.CTkFrame):
             command=lambda: self.on_action("Profile"),
             width=32
         )
+        HoverTooltip(self.profile_btn, lambda: "Conta")
         self.profile_btn.pack(side="left")
 
     # =========================
