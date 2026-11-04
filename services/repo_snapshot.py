@@ -9,6 +9,7 @@ from services.branch_service import (
 )
 from services.commit_service import get_changed_files_grouped, get_recent_commit_rows
 from services.git_runner import GitServiceError
+from services.stash_service import list_stashes
 from services.perf import timed
 
 
@@ -22,6 +23,8 @@ class RepoSnapshot:
     commit_error: str | None = None
     changed_files: Dict[str, List[str]] = field(default_factory=lambda: {"staged": [], "unstaged": []})
     changed_files_error: str | None = None
+    stashes: List[Dict[str, Any]] = field(default_factory=list)
+    stashes_error: str | None = None
 
 
 def collect_repo_snapshot(
@@ -35,11 +38,12 @@ def collect_repo_snapshot(
     passa a ser o do mais lento. Pode ser chamada fora da thread da UI.
     Erros de branches/remotes propagam; erros de commits/arquivos viram texto no snapshot.
     """
-    with timed("collect_repo_snapshot (total, comandos em paralelo)"), ThreadPoolExecutor(max_workers=4) as pool:
+    with timed("collect_repo_snapshot (total, comandos em paralelo)"), ThreadPoolExecutor(max_workers=5) as pool:
         branch_future = pool.submit(get_current_branch, repo_path) if branch_name is None else None
         branches_future = pool.submit(get_local_and_remote_branches, repo_path)
         remotes_future = pool.submit(get_remotes, repo_path)
         files_future = pool.submit(get_changed_files_grouped, repo_path)
+        stashes_future = pool.submit(list_stashes, repo_path)
 
         if branch_future is not None:
             branch_name = branch_future.result()
@@ -65,5 +69,10 @@ def collect_repo_snapshot(
             snapshot.changed_files = files_future.result()
         except GitServiceError as exc:
             snapshot.changed_files_error = str(exc)
+
+        try:
+            snapshot.stashes = stashes_future.result()
+        except GitServiceError as exc:
+            snapshot.stashes_error = str(exc)
 
     return snapshot
