@@ -4,16 +4,26 @@ from tkinter import TclError
 import customtkinter as ctk
 
 from services.branch_service import get_local_and_remote_branches
+from services.pull_request_service import (
+    filter_pull_requests,
+    get_pull_request,
+    list_pull_requests,
+    parse_pull_request_number,
+)
 from services.search_service import (
+    MAX_CONTENT_RESULTS,
+    MIN_CONTENT_QUERY,
     filter_branches,
     filter_paths,
     get_file_history,
     list_repo_files,
     search_commits,
+    search_content,
 )
 from ui.theme import APP_COLORS, load_icon
 
-TABS = ("Commits", "Arquivos", "Branches")
+TABS = ("Commits", "Arquivos", "Branches", "PRs", "Conteúdo")
+PR_STATES = {"open": "aberto", "merged": "mergeado", "closed": "fechado"}
 COMMIT_MODES = {"Mensagem": "message", "Autor": "author", "Código": "code"}
 DEBOUNCE_MS = 250
 
@@ -28,22 +38,29 @@ HINTS = {
     },
     "Arquivos": "Busque um arquivo pelo nome ou caminho.\nEscolha um para ver o histórico dele.",
     "Branches": "Busque uma branch local ou remota.\nEscolher faz o checkout.",
+    "PRs": "Busque Pull Requests (abertos, mergeados e fechados)\npor número, título, branch ou autor.\nEscolher abre o PR no navegador.",
+    "Conteúdo": "Busque um texto dentro dos arquivos do projeto.\nEscolher abre o arquivo na linha encontrada.",
 }
 
 
 class SearchDialog(ctk.CTkToplevel):
-    """Busca global do repositório: commits (mensagem, autor, código), arquivos e branches.
+    """Busca global do repositório: commits (mensagem, autor, código), arquivos, branches,
+    Pull Requests e conteúdo dos arquivos.
 
     Não é modal: dá para abrir vários diffs com a busca aberta. Os dados vêm do git em threads;
     `_token` descarta respostas de uma busca que já foi substituída por outra.
     """
 
-    def __init__(self, master, repo_path: str, on_open_commit, on_checkout_branch):
+    def __init__(
+        self, master, repo_path: str, on_open_commit, on_checkout_branch, on_open_pr=None, on_open_file=None
+    ):
         super().__init__(master)
 
         self.repo_path = repo_path
         self.on_open_commit = on_open_commit
         self.on_checkout_branch = on_checkout_branch
+        self.on_open_pr = on_open_pr
+        self.on_open_file = on_open_file
 
         self._tab = "Commits"
         self._commit_mode = "Mensagem"
@@ -52,6 +69,7 @@ class SearchDialog(ctk.CTkToplevel):
         self._debounce_job = None
         self._files_cache: list[str] | None = None
         self._branches_cache: tuple[list[str], list[str]] | None = None
+        self._prs_cache: list[dict] | None = None
         self._first_action = None
 
         self.title("Buscar")
@@ -187,8 +205,16 @@ class SearchDialog(ctk.CTkToplevel):
             self._start(token, lambda: search_commits(self.repo_path, query, mode), self._render_commits)
         elif self._tab == "Arquivos":
             self._start(token, lambda: self._files_matching(query), self._render_files)
-        else:
+        elif self._tab == "Branches":
             self._start(token, lambda: self._branches_matching(query), self._render_branches)
+        elif self._tab == "PRs":
+            self._start(token, lambda: self._prs_matching(query), self._render_prs)
+        else:
+            if len(query) < MIN_CONTENT_QUERY:
+                self._clear()
+                self._set_footer(f"Digite ao menos {MIN_CONTENT_QUERY} caracteres.")
+                return
+            self._start(token, lambda: search_content(self.repo_path, query), self._render_content)
 
     def _files_matching(self, query: str) -> list[str]:
         if self._files_cache is None:
@@ -200,6 +226,22 @@ class SearchDialog(ctk.CTkToplevel):
             self._branches_cache = get_local_and_remote_branches(self.repo_path)
         local, remote = self._branches_cache
         return filter_branches(local, remote, query)
+
+    def _prs_matching(self, query: str) -> list[dict]:
+        if self._prs_cache is None:
+            self._prs_cache = list_pull_requests(self.repo_path)
+
+        found = filter_pull_requests(self._prs_cache, query)
+
+        # Um número antigo pode ter ficado fora dos PRs mais recentes: busca direto no GitHub.
+        number = parse_pull_request_number(query)
+        if not found and number is not None:
+            pr = get_pull_request(self.repo_path, number)
+            if pr:
+                self._prs_cache.append(pr)
+                found = [pr]
+
+        return found
 
     def _start(self, token: int, work, render, header: str | None = None):
         def runner():
@@ -317,6 +359,33 @@ class SearchDialog(ctk.CTkToplevel):
 
         self._set_footer(self._count_text(len(branches), "branch", "branches"))
 
+    def _render_prs(self, prs: list[dict]):
+        self._clear()
+
+        for pr in prs:
+            state = PR_STATES.get(pr.get("state"), pr.get("state", ""))
+            details = [f"{pr.get('head', '')} → {pr.get('base', '')}", state]
+            if pr.get("author"):
+                details.append(f"@{pr['author']}")
+            self._add_row(f"#{pr['number']}  {pr['title']}", " · ".join(details), lambda p=pr: self._open_pr(p))
+
+        self._set_footer(self._count_text(len(prs), "Pull Request", "Pull Requests"))
+
+    def _render_content(self, rows: list[dict]):
+        self._clear()
+
+        for row in rows:
+            self._add_row(
+                f"{row['path']}:{row['line']}",
+                row["text"] or "(linha em branco)",
+                lambda r=row: self._open_content(r),
+            )
+
+        text = self._count_text(len(rows), "ocorrência", "ocorrências")
+        if len(rows) >= MAX_CONTENT_RESULTS:
+            text += f" (mostrando as primeiras {MAX_CONTENT_RESULTS}; refine a busca)"
+        self._set_footer(text)
+
     @staticmethod
     def _count_text(count: int, singular: str, plural: str) -> str:
         if count == 0:
@@ -332,6 +401,14 @@ class SearchDialog(ctk.CTkToplevel):
     def _back_to_search(self):
         self._file_path = None
         self._search_now()
+
+    def _open_pr(self, pr: dict):
+        if self.on_open_pr:
+            self.on_open_pr(pr)
+
+    def _open_content(self, row: dict):
+        if self.on_open_file:
+            self.on_open_file(row["path"], row["line"])
 
     def _checkout(self, branch: dict):
         name, is_remote = branch["name"], branch["remote"]

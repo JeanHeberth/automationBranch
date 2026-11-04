@@ -199,6 +199,107 @@ def list_open_pull_requests(repo_path: str, use_cache: bool = True) -> List[Dict
         raise GitServiceError(f"Erro ao listar Pull Requests: {str(exc)}") from exc
 
 
+_ALL_PR_CACHE: Dict[tuple, tuple] = {}
+_ALL_PR_CACHE_TTL = 60.0
+_PR_STATE_ORDER = {"open": 0, "merged": 1, "closed": 2}
+
+
+def _summarize_pull_request(pr: Dict[str, Any]) -> Dict[str, Any]:
+    state = "open" if pr.get("state") == "open" else ("merged" if pr.get("merged_at") else "closed")
+
+    return {
+        "number": pr.get("number"),
+        "title": pr.get("title", ""),
+        "head": (pr.get("head") or {}).get("ref", ""),
+        "base": (pr.get("base") or {}).get("ref", ""),
+        "url": pr.get("html_url", ""),
+        "state": state,
+        "author": (pr.get("user") or {}).get("login", ""),
+    }
+
+
+def list_pull_requests(repo_path: str, limit: int = 100, use_cache: bool = True) -> List[Dict[str, Any]]:
+    """PRs abertos, mergeados e fechados (os mais recentemente atualizados), para a busca.
+
+    Uma única requisição, com cache curto: a busca filtra localmente a cada tecla.
+    """
+    owner, repo = _get_repo_info(repo_path)
+    cache_key = (owner, repo)
+    now = time.monotonic()
+
+    if use_cache:
+        cached = _ALL_PR_CACHE.get(cache_key)
+        if cached is not None and now - cached[0] < _ALL_PR_CACHE_TTL:
+            return [dict(pr) for pr in cached[1]]
+
+    try:
+        response = requests.get(
+            f"https://api.github.com/repos/{owner}/{repo}/pulls",
+            headers=_get_headers(require_token=False),
+            params={"state": "all", "sort": "updated", "direction": "desc", "per_page": min(limit, 100)},
+            timeout=10,
+        )
+        response.raise_for_status()
+        prs = [_summarize_pull_request(pr) for pr in response.json()]
+    except requests.RequestException as exc:
+        raise GitServiceError(f"Erro ao listar Pull Requests: {_http_error_message(exc)}") from exc
+
+    _ALL_PR_CACHE[cache_key] = (now, [dict(pr) for pr in prs])
+    return prs
+
+
+def get_pull_request(repo_path: str, number: int) -> Optional[Dict[str, Any]]:
+    """Um PR pelo número, ou None se não existir (para números fora dos mais recentes)."""
+    owner, repo = _get_repo_info(repo_path)
+
+    try:
+        response = requests.get(
+            f"https://api.github.com/repos/{owner}/{repo}/pulls/{number}",
+            headers=_get_headers(require_token=False),
+            timeout=10,
+        )
+        if response.status_code == 404:
+            return None
+        response.raise_for_status()
+        return _summarize_pull_request(response.json())
+    except requests.RequestException as exc:
+        raise GitServiceError(f"Erro ao buscar o Pull Request #{number}: {_http_error_message(exc)}") from exc
+
+
+_PR_NUMBER_RE = re.compile(r"^#?(\d+)$")
+
+
+def parse_pull_request_number(query: str) -> int | None:
+    match = _PR_NUMBER_RE.match(query.strip())
+    return int(match.group(1)) if match else None
+
+
+def filter_pull_requests(prs: List[Dict[str, Any]], query: str, limit: int = 50) -> List[Dict[str, Any]]:
+    """Filtra por número, título, branches (origem/destino) ou autor; abertos primeiro."""
+    query = query.strip()
+    if not query:
+        return []
+
+    number = parse_pull_request_number(query)
+    if number is not None:
+        exact = [pr for pr in prs if pr.get("number") == number]
+        if exact:
+            return exact
+
+    terms = query.lstrip("#").lower().split()
+    matches = []
+
+    for pr in prs:
+        haystack = " ".join(
+            [str(pr.get("number", "")), pr.get("title", ""), pr.get("head", ""), pr.get("base", ""), pr.get("author", "")]
+        ).lower()
+        if all(term in haystack for term in terms):
+            matches.append(pr)
+
+    matches.sort(key=lambda pr: _PR_STATE_ORDER.get(pr.get("state", "closed"), 2))  # estável: mantém a recência
+    return matches[:limit]
+
+
 def find_open_pull_request_by_head(repo_path: str, head_branch: str) -> Optional[Dict[str, Any]]:
     prs = list_open_pull_requests(repo_path)
 
