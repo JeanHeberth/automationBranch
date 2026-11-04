@@ -52,7 +52,16 @@ class SearchDialog(ctk.CTkToplevel):
     """
 
     def __init__(
-        self, master, repo_path: str, on_open_commit, on_checkout_branch, on_open_pr=None, on_open_file=None
+        self,
+        master,
+        repo_path: str,
+        on_open_commit,
+        on_checkout_branch,
+        on_open_pr=None,
+        on_open_file=None,
+        tabs: tuple = TABS,
+        title: str = "Buscar",
+        close_on_pick: bool = False,
     ):
         super().__init__(master)
 
@@ -62,7 +71,11 @@ class SearchDialog(ctk.CTkToplevel):
         self.on_open_pr = on_open_pr
         self.on_open_file = on_open_file
 
-        self._tab = "Commits"
+        # tabs/title/close_on_pick permitem usar a janela como seletor (ex.: escolher o commit
+        # de um cherry-pick): só a aba Commits, e escolher um resultado fecha a janela.
+        self._tabs = tuple(tabs)
+        self._close_on_pick = close_on_pick
+        self._tab = self._tabs[0]
         self._commit_mode = "Mensagem"
         self._file_path: str | None = None  # arquivo cujo histórico está sendo mostrado
         self._token = 0
@@ -72,7 +85,7 @@ class SearchDialog(ctk.CTkToplevel):
         self._prs_cache: list[dict] | None = None
         self._first_action = None
 
-        self.title("Buscar")
+        self.title(title)
         self.geometry("620x560")
         self.minsize(480, 360)
         self.configure(fg_color=APP_COLORS["panel"])
@@ -108,7 +121,7 @@ class SearchDialog(ctk.CTkToplevel):
         self.entry.bind("<Return>", lambda _e: self._run_first_action())
 
         self.tabs = ctk.CTkSegmentedButton(
-            self, values=list(TABS), command=self._on_tab_change, height=30
+            self, values=list(self._tabs), command=self._on_tab_change, height=30
         )
         self.tabs.set(self._tab)
         self.tabs.pack(fill="x", padx=14, pady=(0, 6))
@@ -331,7 +344,7 @@ class SearchDialog(ctk.CTkToplevel):
             self._add_row(
                 f"{row['hash']}  {row['subject']}",
                 f"{row['author']} · {row['date']}",
-                lambda r=row: self.on_open_commit(r["hash"], r["subject"]),
+                lambda r=row: self._open_commit(r),
             )
 
         self._set_footer(self._count_text(len(rows), "commit", "commits"))
@@ -401,6 +414,11 @@ class SearchDialog(ctk.CTkToplevel):
     def _back_to_search(self):
         self._file_path = None
         self._search_now()
+
+    def _open_commit(self, row: dict):
+        if self._close_on_pick:
+            self.close()
+        self.on_open_commit(row["hash"], row["subject"])
 
     def _open_pr(self, pr: dict):
         if self.on_open_pr:

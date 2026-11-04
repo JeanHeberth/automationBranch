@@ -471,3 +471,79 @@ def test_pull_com_rebase_mantem_historico_linear(repo, tmp_path):
     assert _git(repo, "log", "--format=%s", "-2").splitlines() == ["commit local", "commit remoto"]
     assert len(_git(repo, "log", "-1", "--format=%P").split()) == 1  # sem merge commit
     assert "nao commitado" in open(os.path.join(repo, "README.md")).read()
+
+
+# ---------- refazer (redo do "desfazer commit") ----------
+
+def test_redo_traz_de_volta_o_commit_desfeito(repo):
+    sha = _commit(repo, "a.txt", "a\n", "vai e volta")
+    ga.undo_last_commit(repo)
+    assert _git(repo, "log", "-1", "--format=%s") == "primeiro commit"
+
+    summary = ga.redo_last_undo(repo)
+
+    assert summary.endswith("vai e volta")
+    assert _git(repo, "rev-parse", "--short", "HEAD") == sha  # o mesmo commit, sem recriá-lo
+    assert _git(repo, "status", "--short") == ""
+
+
+def test_redo_so_esta_disponivel_logo_depois_do_desfazer(repo):
+    _commit(repo, "a.txt", "a\n", "um")
+
+    assert ga.get_redo_target(repo) is None
+    with pytest.raises(GitServiceError, match="Reflog"):
+        ga.redo_last_undo(repo)
+
+    ga.undo_last_commit(repo)
+    assert ga.get_redo_target(repo)["summary"].endswith("um")
+
+
+def test_redo_some_depois_de_um_novo_commit(repo):
+    _commit(repo, "a.txt", "a\n", "desfeito")
+    ga.undo_last_commit(repo)
+    _git(repo, "commit", "-q", "-m", "novo no lugar")
+
+    assert ga.get_redo_target(repo) is None
+    with pytest.raises(GitServiceError):
+        ga.redo_last_undo(repo)
+
+
+def test_redo_some_depois_de_trocar_de_branch(repo):
+    _commit(repo, "a.txt", "a\n", "desfeito")
+    ga.undo_last_commit(repo)
+    _git(repo, "stash", "-q")
+    _git(repo, "checkout", "-q", "main")
+
+    assert ga.get_redo_target(repo) is None
+
+
+def test_redo_preserva_o_que_foi_alterado_depois_do_desfazer(repo):
+    _commit(repo, "a.txt", "a\n", "desfeito")
+    ga.undo_last_commit(repo)
+    _write(repo, "extra.txt", "novo trabalho\n")
+
+    ga.redo_last_undo(repo)
+
+    assert os.path.exists(os.path.join(repo, "extra.txt"))
+    assert "extra.txt" in _git(repo, "status", "--short")  # continua como arquivo novo, nada perdido
+
+
+def test_undo_e_redo_em_sequencia_varias_vezes(repo):
+    _commit(repo, "a.txt", "a\n", "ciclo")
+
+    for _ in range(3):
+        ga.undo_last_commit(repo)
+        ga.redo_last_undo(repo)
+
+    assert _git(repo, "log", "-1", "--format=%s") == "ciclo"
+    assert _git(repo, "rev-list", "--count", "HEAD") == "2"
+
+
+def test_redo_recusa_branch_protegida(repo):
+    _commit(repo, "a.txt", "a\n", "x")
+    ga.undo_last_commit(repo)
+    _git(repo, "stash", "-q", "--include-untracked")
+    _git(repo, "checkout", "-q", "main")
+
+    with pytest.raises(GitServiceError, match="protegida"):
+        ga.redo_last_undo(repo)
