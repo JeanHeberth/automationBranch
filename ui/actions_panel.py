@@ -37,6 +37,12 @@ class ActionsPanel(ctk.CTkToplevel):
         self.bind("<FocusOut>", self._on_focus_out)
         self.focus_force()
 
+        # No macOS o painel (sem borda) nem sempre recebe FocusOut ao clicar na janela
+        # principal: fecha também por clique fora e confere o foco periodicamente.
+        self._outside_toplevel = master.winfo_toplevel()
+        self._outside_bind_id = self._outside_toplevel.bind("<Button-1>", self._on_outside_click, add="+")
+        self.after(200, self._poll_focus)
+
     # ---------- construção ----------
 
     def _build_ui(self):
@@ -137,6 +143,18 @@ class ActionsPanel(ctk.CTkToplevel):
         # Depois que o foco assenta: mover o foco entre widgets do próprio painel não fecha.
         self.after(60, self._close_if_unfocused)
 
+    def _on_outside_click(self, event):
+        if not str(event.widget).startswith(str(self)):
+            self.close()
+
+    def _poll_focus(self):
+        if self._closed or not self.winfo_exists():
+            return
+        if self.focus_displayof() is None:
+            self.close()
+        else:
+            self.after(200, self._poll_focus)
+
     def _close_if_unfocused(self):
         if self.winfo_exists() and self.focus_displayof() is None:
             self.close()
@@ -152,6 +170,10 @@ class ActionsPanel(ctk.CTkToplevel):
         if self._closed:
             return
         self._closed = True
+        try:
+            self._outside_toplevel.unbind("<Button-1>", self._outside_bind_id)
+        except Exception:
+            pass
         if self.on_close:
             self.on_close()
         if self.winfo_exists():

@@ -1,5 +1,7 @@
 import customtkinter as ctk
 
+from ui.window_position import center_on_master
+
 
 class _PrefilledInputDialog(ctk.CTkInputDialog):
     def __init__(self, *args, initialvalue: str = "", **kwargs):
@@ -47,10 +49,7 @@ class _TextDialog(ctk.CTkToplevel):
         ctk.CTkButton(buttons, text="OK", width=100, command=self._confirm).pack(side="right", padx=(0, 8))
 
         self.protocol("WM_DELETE_WINDOW", self.destroy)
-        self.update_idletasks()
-        x = master.winfo_rootx() + (master.winfo_width() - self.winfo_width()) // 2
-        y = master.winfo_rooty() + (master.winfo_height() - self.winfo_height()) // 2
-        self.geometry(f"+{max(x, 0)}+{max(y, 0)}")
+        center_on_master(self, master)
 
         # grab/foco após a janela estar visível; sem isso o campo fica bloqueado no macOS.
         self.after(150, self._take_focus)

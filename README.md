@@ -43,12 +43,19 @@ Desenvolvida em Python com foco em produtividade, visual moderno e facilidade de
     - **Branches, tags e histórico:** renomear a branch atual, limpar branches já mescladas,
       **Gerenciar tags** (criar, enviar e apagar, locais e remotas) e o **Reflog**, com o
       histórico do HEAD, ver commit, criar branch no ponto e voltar a ele
-    - O painel complementa a barra do topo e não repete o que ela já faz. **Undo** desfaz o
+    - O painel fecha ao escolher uma ação, com Esc ou ao clicar fora dele. Ele complementa a
+      barra do topo e não repete o que ela já faz. **Undo** desfaz o
       último commit (mantém as alterações em stage) e **Redo** o traz de volta; o Redo só vale
       logo depois de um Undo (com outro commit no meio, use o Reflog). O botão **Terminal** do
       topo abre o terminal na pasta do repositório
     - **Repositório:** abrir o repositório ou a branch no GitHub, copiar a URL, abrir no editor
       (`AUTOMATION_EDITOR` define qual; o padrão é o VS Code), clonar e inicializar repositórios
+- 📐 **Barra do topo responsiva:** em janelas estreitas os botões que não cabem (Branch, Delete
+  Branch, Stash, Pop, Open PR, Merge PR e Terminal) vão para o menu **⋯**, que só aparece quando
+  há algo escondido
+- 💬 **Tooltips** em todos os botões da barra do topo: ao passar o mouse aparece o nome da função
+  (útil nos botões só de ícone e no menu ⋯)
+- 🔤 Acentos corretos nas mensagens de commit no Windows (a saída do Git é lida como UTF-8)
 - 🛡️ Ações que reescrevem histórico (rebase, desfazer commit, voltar no reflog) são bloqueadas
   em branches protegidas (`main`, `master`, `develop`) e `reset --hard` recusa alterações não
   commitadas, para nada ser perdido
@@ -75,7 +82,7 @@ automationBranch/
 ├── main.py
 ├── ui/                     # Camada de interface (CustomTkinter)
 │   ├── main_window.py       # Janela principal e orquestração das ações
-│   ├── top_bar.py
+│   ├── top_bar.py           # Barra do topo (responsiva, com menu ⋯ para botões escondidos)
 │   ├── left_sidebar.py
 │   ├── center_panel.py
 │   ├── right_panel.py       # Arquivos (checkboxes, stage/unstage/descartar), stashes e commit
@@ -296,6 +303,7 @@ as operações de Pull Request.
 - [x] Busca global de commits, arquivos, branches, Pull Requests e conteúdo dos arquivos
 - [x] Undo / Redo do topo (desfazer e refazer commit)
 - [x] Painel de ações: fetch, merge, rebase, cherry-pick, revert, reflog, tags, abrir no GitHub/editor, clonar
+- [x] Barra do topo responsiva com menu ⋯, tooltips nos botões e correção de acentos (UTF-8) no Windows
 - [x] Commit e login em segundo plano (sem travar a janela)
 
 ### 🔥 Em desenvolvimento

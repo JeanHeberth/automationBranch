@@ -1,4 +1,6 @@
 import customtkinter as ctk
+
+from ui.window_position import center_on_master
 from ui.theme import APP_COLORS, load_icon
 
 
@@ -97,20 +99,7 @@ class ProfileConnectPopup(ctk.CTkToplevel):
         )
 
     def _center(self, master):
-        self.update_idletasks()
-
-        width = self.winfo_width()
-        height = self.winfo_height()
-
-        master_x = master.winfo_rootx()
-        master_y = master.winfo_rooty()
-        master_width = master.winfo_width()
-        master_height = master.winfo_height()
-
-        x = master_x + (master_width - width) // 2
-        y = master_y + (master_height - height) // 2
-
-        self.geometry(f"{width}x{height}+{x}+{y}")
+        center_on_master(self, master)
 
     def _handle_github(self):
         if self.on_github:
