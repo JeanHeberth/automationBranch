@@ -1,13 +1,13 @@
 import customtkinter as ctk
 
 from ui.actions_menu import COLUMNS, MENU_SPEC, OPERATION_NAMES
+from ui.window_position import place_below_anchor
 from ui.theme import APP_COLORS, load_icon
 
 PANEL_BG = "#111827"
 ROW_HOVER = "#1f2937"
 COLUMN_WIDTH = 250
 ROW_HEIGHT = 32
-SCREEN_MARGIN = 8
 
 
 class ActionsPanel(ctk.CTkToplevel):
@@ -128,16 +128,7 @@ class ActionsPanel(ctk.CTkToplevel):
     # ---------- posição e foco ----------
 
     def _place(self, anchor_widget):
-        self.update_idletasks()
-        width, height = self.winfo_reqwidth(), self.winfo_reqheight()
-
-        # O botão fica no canto direito da janela: alinha a borda direita do painel com a dele.
-        x = anchor_widget.winfo_rootx() + anchor_widget.winfo_width() - width
-        y = anchor_widget.winfo_rooty() + anchor_widget.winfo_height() + 6
-
-        x = max(SCREEN_MARGIN, min(x, self.winfo_screenwidth() - width - SCREEN_MARGIN))
-        y = max(SCREEN_MARGIN, min(y, self.winfo_screenheight() - height - SCREEN_MARGIN))
-        self.geometry(f"+{x}+{y}")
+        place_below_anchor(self, anchor_widget)
 
     def _on_focus_out(self, _event=None):
         # Depois que o foco assenta: mover o foco entre widgets do próprio painel não fecha.

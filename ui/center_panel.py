@@ -18,7 +18,14 @@ GRAPH_COLORS = [
 
 
 class HoverTooltip:
+    """Tooltip ao passar o mouse.
+
+    Usa uma única janela por aplicação, criada oculta e só mostrada/ocultada (withdraw), em vez
+    de criar e destruir uma a cada passada do mouse. No macOS, em tela estendida (iPad), destruir
+    janelas sem borda deixava um quadrado preto parado na tela."""
+
     _instances: "weakref.WeakSet[HoverTooltip]" = weakref.WeakSet()
+    _shared: dict = {}  # root -> [janela, label, dono atual]
 
     def __init__(self, widget, text_getter):
         self.widget = widget
@@ -30,6 +37,23 @@ class HoverTooltip:
         widget.bind("<Leave>", self.hide, add="+")
         widget.bind("<Motion>", self.move, add="+")
         widget.bind("<ButtonPress>", self.hide, add="+")
+
+    def _shared_window(self):
+        root = self.widget._root()
+        entry = HoverTooltip._shared.get(root)
+        if entry is None or not entry[0].winfo_exists():
+            # tk.Toplevel/tk.Label puros: CTkToplevel + CTkLabel renderizam o tooltip vazio no
+            # macOS (sem texto) e são lentos para criar/destruir no Windows.
+            tip = tk.Toplevel(root)
+            tip.withdraw()
+            tip.wm_overrideredirect(True)
+            tip.attributes("-topmost", True)
+            tip.configure(bg=APP_COLORS["border"])
+            label = tk.Label(tip, fg=APP_COLORS["text"], bg="#111827", justify="left", padx=10, pady=6)
+            label.pack(padx=1, pady=1)
+            entry = [tip, label, None]
+            HoverTooltip._shared[root] = entry
+        return entry
 
     def show(self, event=None):
         text = self.text_getter()
@@ -47,25 +71,14 @@ class HoverTooltip:
         if grab is not None and grab.winfo_toplevel() is not self.widget.winfo_toplevel():
             return
 
-        # tk.Toplevel/tk.Label puros: CTkToplevel + CTkLabel renderizam o tooltip vazio no
-        # macOS (sem texto) e são lentos para criar/destruir no Windows.
-        self.tip = tk.Toplevel(self.widget)
-        self.tip.wm_overrideredirect(True)
-        self.tip.attributes("-topmost", True)
-        self.tip.configure(bg=APP_COLORS["border"])
+        entry = self._shared_window()
+        entry[2] = self
+        entry[1].configure(text=text)
+        self.tip = entry[0]
 
-        label = tk.Label(
-            self.tip,
-            text=text,
-            fg=APP_COLORS["text"],
-            bg="#111827",
-            justify="left",
-            padx=10,
-            pady=6,
-        )
-        label.pack(padx=1, pady=1)
-
+        self.tip.update_idletasks()
         self.move(event)
+        self.tip.deiconify()
 
     def move(self, event=None):
         if self.tip is None or event is None:
@@ -76,18 +89,27 @@ class HoverTooltip:
         self.tip.geometry(f"+{x}+{y}")
 
     def hide(self, _event=None):
-        if self.tip is not None:
-            self.tip.destroy()
-            self.tip = None
+        if self.tip is None:
+            return
+        entry = HoverTooltip._shared.get(self.widget._root())
+        # Só oculta se a janela compartilhada ainda é deste tooltip.
+        if entry is not None and entry[2] is self and entry[0].winfo_exists():
+            entry[0].withdraw()
+            entry[2] = None
+        self.tip = None
 
     @classmethod
     def hide_all(cls):
         """Fecha todos os tooltips visíveis (ex.: ao abrir um popup modal)."""
-        for instance in list(cls._instances):
+        for entry in list(cls._shared.values()):
             try:
-                instance.hide()
+                if entry[0].winfo_exists():
+                    entry[0].withdraw()
+                entry[2] = None
             except Exception:
                 pass
+        for instance in list(cls._instances):
+            instance.tip = None
 
 
 class CommitRow(ctk.CTkFrame):

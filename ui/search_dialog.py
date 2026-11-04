@@ -66,6 +66,7 @@ class SearchDialog(ctk.CTkToplevel):
         close_on_pick: bool = False,
     ):
         super().__init__(master)
+        self.withdraw()  # exibida só depois de posicionada (ver center_on_master)
 
         self.repo_path = repo_path
         self.on_open_commit = on_open_commit

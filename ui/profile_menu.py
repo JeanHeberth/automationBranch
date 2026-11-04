@@ -1,9 +1,9 @@
 import customtkinter as ctk
+from ui.window_position import place_below_anchor
 from ui.theme import APP_COLORS
 
 
 MENU_WIDTH = 280
-SCREEN_MARGIN = 8
 
 
 class ProfileMenu(ctk.CTkToplevel):
@@ -118,21 +118,7 @@ class ProfileMenu(ctk.CTkToplevel):
             connect_btn.pack(fill="x", padx=10, pady=(0, 10))
 
     def _place_near_anchor(self):
-        self.update_idletasks()
-
-        width = self.winfo_reqwidth()
-        height = self.winfo_reqheight()
-
-        # O botão de perfil fica no canto direito da janela: alinha a borda direita do menu
-        # com a do botão (cresce para a esquerda) e garante que nada saia da tela.
-        anchor_right = self.anchor_widget.winfo_rootx() + self.anchor_widget.winfo_width()
-        x = anchor_right - width
-        y = self.anchor_widget.winfo_rooty() + self.anchor_widget.winfo_height() + 6
-
-        x = max(SCREEN_MARGIN, min(x, self.winfo_screenwidth() - width - SCREEN_MARGIN))
-        y = max(SCREEN_MARGIN, min(y, self.winfo_screenheight() - height - SCREEN_MARGIN))
-
-        self.geometry(f"+{x}+{y}")
+        place_below_anchor(self, self.anchor_widget)
 
     def _handle_connect(self):
         self._safe_close()

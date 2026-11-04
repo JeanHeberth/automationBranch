@@ -8,6 +8,7 @@ from ui.theme import APP_COLORS
 class DeleteBranchPopup(ctk.CTkToplevel):
     def __init__(self, master, local_branches: list[str], remote_branches: list[str], on_confirm):
         super().__init__(master)
+        self.withdraw()  # exibida só depois de posicionada (ver center_on_master)
 
         # Tooltips da tela de trás são topmost e ficariam por cima do popup.
         HoverTooltip.hide_all()
@@ -26,16 +27,17 @@ class DeleteBranchPopup(ctk.CTkToplevel):
         self.title("Deletar Branch")
         # Em telas menores (ex.: notebook) 800px estoura a altura útil e esconde os botões.
         # Desconta barra de título + barra de tarefas/Dock, que o winfo_screenheight não exclui.
-        height = min(800, max(self.winfo_screenheight() - 220, 480))
+        height = min(600, max(self.winfo_screenheight() - 220, 480))
         self.geometry(f"520x{height}")
-        self.resizable(False, False)
+        self.minsize(520, 460)
+        self.resizable(False, True)
         self.configure(fg_color=APP_COLORS["panel"])
 
         self.transient(master)
-        self.grab_set()
 
         self._build_ui()
         self._center(master)
+        self.after(150, self.grab_set)
         self._refresh_branch_options()
 
     def _build_ui(self):
@@ -62,8 +64,14 @@ class DeleteBranchPopup(ctk.CTkToplevel):
             wraplength=440
         ).pack(anchor="w", pady=(0, 14))
 
-        mode_frame = ctk.CTkFrame(container, fg_color="transparent")
-        mode_frame.pack(fill="x", pady=(0, 12))
+        # Tipo e local lado a lado: a janela fica baixa o bastante para caber em telas menores
+        # (ex.: iPad como tela estendida), onde o rodapé com os botões era cortado.
+        options_row = ctk.CTkFrame(container, fg_color="transparent")
+        options_row.pack(fill="x", pady=(0, 12))
+        options_row.grid_columnconfigure((0, 1), weight=1, uniform="options")
+
+        mode_frame = ctk.CTkFrame(options_row, fg_color="transparent")
+        mode_frame.grid(row=0, column=0, sticky="nw")
 
         ctk.CTkLabel(
             mode_frame,
@@ -88,8 +96,8 @@ class DeleteBranchPopup(ctk.CTkToplevel):
             command=self._refresh_mode_state
         ).pack(anchor="w")
 
-        location_frame = ctk.CTkFrame(container, fg_color="transparent")
-        location_frame.pack(fill="x", pady=(0, 12))
+        location_frame = ctk.CTkFrame(options_row, fg_color="transparent")
+        location_frame.grid(row=0, column=1, sticky="nw")
 
         ctk.CTkLabel(
             location_frame,
@@ -151,12 +159,12 @@ class DeleteBranchPopup(ctk.CTkToplevel):
             branch_frame,
             fg_color="#111827",
             corner_radius=10,
-            height=150
+            height=100
         )
         self.branch_list.pack(fill="both", expand=True)
 
         helper_frame = ctk.CTkFrame(container, fg_color="#1b2430", corner_radius=10)
-        helper_frame.pack(fill="x", side="bottom", pady=(8, 14), before=mode_frame)
+        helper_frame.pack(fill="x", side="bottom", pady=(8, 14), before=options_row)
 
         ctk.CTkLabel(
             helper_frame,
