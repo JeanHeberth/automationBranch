@@ -12,6 +12,7 @@ from ui.center_panel import CenterPanel
 from ui.right_panel import RightPanel
 from ui.diff_viewer import DiffViewer
 from ui.profile_popup import ProfileConnectPopup
+from ui.device_login_dialog import DeviceLoginDialog
 from ui.profile_menu import ProfileMenu
 from ui.delete_branch_popup import DeleteBranchPopup
 from ui.base_branch_popup import BaseBranchPopup
@@ -79,7 +80,6 @@ from services.sync_service import (
 from services.auth_service import (
     get_current_session,
     login_with_github,
-    login_with_google,
     logout,
 )
 
@@ -103,6 +103,8 @@ class MainWindow(ctk.CTk):
         self.repositories: dict[str, str] = {}
         self.is_updating_branch_ui = False
         self.profile_menu_popup = None
+        self._login_in_progress = False
+        self._login_dialog = None
         # Evita disparar duas operações Git de rede ao mesmo tempo.
         self._bg_busy = False
         # Identifica a atualização mais recente da UI (descarta resultados atrasados).
@@ -213,8 +215,7 @@ class MainWindow(ctk.CTk):
     def _open_profile_connect_popup(self):
         ProfileConnectPopup(
             self,
-            on_github=self._connect_github,
-            on_google=self._connect_google
+            on_github=self._connect_github
         )
 
     def _open_profile_menu(self):
@@ -230,23 +231,61 @@ class MainWindow(ctk.CTk):
         )
 
     def _connect_github(self):
-        try:
-            session = login_with_github()
+        if self._login_in_progress:
+            messagebox.showinfo(
+                "Login em andamento",
+                "Conclua a autorização no navegador ou cancele na janela do código."
+            )
+            return
+
+        self._login_in_progress = True
+        cancel = threading.Event()
+        self.set_status("Iniciando login no GitHub...")
+
+        def show_code(device):
+            # Roda na thread da UI: o diálogo só existe enquanto o login está em andamento.
+            if not self._login_in_progress or cancel.is_set():
+                return
+            self._login_dialog = DeviceLoginDialog(
+                self,
+                user_code=device["user_code"],
+                verification_uri=device["verification_uri"],
+                on_cancel=cancel.set,
+            )
+            self._login_dialog.open_browser()
+            self.set_status("Aguardando autorização no GitHub...")
+
+        def finish(session=None, error=None):
+            self._login_in_progress = False
+            if self._login_dialog is not None:
+                self._login_dialog.close()
+                self._login_dialog = None
+            if not self.winfo_exists():
+                return
+            if error is not None:
+                if cancel.is_set():
+                    self.set_status("Login cancelado.")
+                else:
+                    messagebox.showerror("Erro no login GitHub", str(error))
+                    self.set_status("Falha ao conectar conta GitHub.")
+                return
             self._refresh_profile_ui()
             self.set_status(f"Conta conectada com sucesso via {session['provider']}.")
-        except Exception as exc:
-            messagebox.showerror("Erro no login GitHub", str(exc))
-            self.set_status("Falha ao conectar conta GitHub.")
 
-    def _connect_google(self):
-        try:
-            login_with_google()
-        except NotImplementedError as exc:
-            messagebox.showinfo("Google em breve", str(exc))
-            self.set_status("Login com Google ainda não implementado.")
-        except Exception as exc:
-            messagebox.showerror("Erro no login Google", str(exc))
-            self.set_status("Falha ao conectar conta Google.")
+        # O login faz chamadas de rede e espera a autorização do usuário (minutos): roda em
+        # thread própria para a janela não congelar e sem travar as operações Git.
+        def runner():
+            try:
+                session = login_with_github(
+                    lambda device: self._safe_after(lambda d=device: show_code(d)),
+                    cancel,
+                )
+            except Exception as exc:
+                self._safe_after(lambda e=exc: finish(error=e))
+            else:
+                self._safe_after(lambda sess=session: finish(session=sess))
+
+        threading.Thread(target=runner, daemon=True).start()
 
     def _logout_profile(self):
         logout()
@@ -883,10 +922,10 @@ class MainWindow(ctk.CTk):
         repo_path = self.selected_repo_path
         current_branch = get_current_branch(repo_path)
 
-        if current_branch == "main":
+        if is_protected(current_branch):
             messagebox.showwarning(
                 "Branch inválida",
-                "Não faz sentido abrir PR da branch main para ela mesma."
+                f"Não faz sentido abrir PR a partir da branch protegida {current_branch}."
             )
             return
 
