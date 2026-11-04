@@ -20,25 +20,6 @@ def pasta(tmp_path):
     return str(tmp_path)
 
 
-def test_open_folder_por_sistema(monkeypatch, spawned, pasta):
-    monkeypatch.setattr(ss.sys, "platform", "darwin")
-    ss.open_folder(pasta)
-    monkeypatch.setattr(ss.sys, "platform", "linux")
-    ss.open_folder(pasta)
-
-    assert spawned == [(["open", pasta], None), (["xdg-open", pasta], None)]
-
-
-def test_open_folder_no_windows_usa_startfile(monkeypatch, pasta):
-    abertos = []
-    monkeypatch.setattr(ss.sys, "platform", "win32")
-    monkeypatch.setattr(ss.os, "startfile", abertos.append, raising=False)
-
-    ss.open_folder(pasta)
-
-    assert abertos == [pasta]
-
-
 def test_open_terminal_por_sistema(monkeypatch, spawned, pasta):
     monkeypatch.setattr(ss.sys, "platform", "darwin")
     ss.open_terminal(pasta)
@@ -95,7 +76,7 @@ def test_open_editor_sem_nenhum_editor_explica_como_configurar(monkeypatch, spaw
         ss.open_editor(pasta)
 
 
-@pytest.mark.parametrize("acao", [ss.open_folder, ss.open_terminal, ss.open_editor])
+@pytest.mark.parametrize("acao", [ss.open_terminal, ss.open_editor])
 def test_pasta_inexistente_e_erro(acao, tmp_path):
     with pytest.raises(GitServiceError, match="não existe"):
         acao(str(tmp_path / "nada"))
@@ -109,7 +90,7 @@ def test_programa_ausente_vira_erro_claro(monkeypatch, pasta):
     monkeypatch.setattr(ss.sys, "platform", "darwin")
 
     with pytest.raises(GitServiceError, match="não encontrado"):
-        ss.open_folder(pasta)
+        ss.open_terminal(pasta)
 
 
 def test_urls_do_github():

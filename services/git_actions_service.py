@@ -161,6 +161,48 @@ def undo_last_commit(repo_path: str) -> str:
     return summary
 
 
+UNDO_REFLOG_MESSAGE = "reset: moving to HEAD~1"  # o que undo_last_commit deixa no reflog
+
+
+def get_redo_target(repo_path: str) -> Dict[str, str] | None:
+    """O commit que o último "desfazer" removeu, se ainda for possível refazê-lo.
+
+    Só vale logo depois do desfazer: a entrada mais recente do reflog precisa ser o próprio
+    `reset --soft HEAD~1`, e o commit removido tem de ser descendente do HEAD atual. Qualquer
+    commit, checkout ou outro reset no meio invalida (o Reflog cobre esses casos).
+    """
+    entries = get_reflog(repo_path, limit=2)
+    if len(entries) < 2 or entries[0]["message"] != UNDO_REFLOG_MESSAGE:
+        return None
+
+    target = entries[1]["hash"]
+    try:
+        run_git_command(repo_path, ["merge-base", "--is-ancestor", "HEAD", target])
+    except GitServiceError:
+        return None
+
+    return {"hash": target, "summary": run_git_command(repo_path, ["log", "-1", "--pretty=format:%h %s", target])}
+
+
+def redo_last_undo(repo_path: str) -> str:
+    """Desfaz o "desfazer": traz de volta o commit removido por `undo_last_commit`."""
+    current = get_current_branch(repo_path)
+
+    if is_protected(current):
+        raise GitServiceError(f"Não é permitido reescrever o histórico da branch protegida '{current}'.")
+
+    target = get_redo_target(repo_path)
+    if target is None:
+        raise GitServiceError(
+            "Não há um \"desfazer commit\" recente para refazer. "
+            "Para voltar a um ponto anterior, use o Reflog."
+        )
+
+    # --soft: o stage e os arquivos ficam como estão, nada que você alterou depois é perdido.
+    run_git_command(repo_path, ["reset", "--soft", target["hash"]])
+    return target["summary"]
+
+
 def get_reflog(repo_path: str, limit: int = 50) -> List[Dict[str, Any]]:
     output = run_git_command(
         repo_path,

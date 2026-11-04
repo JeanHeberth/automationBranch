@@ -1,88 +1,42 @@
-import sys
-import tkinter as tk
-
-from ui.theme import APP_COLORS
-
-# (rótulo do grupo, [(rótulo, chave do handler) ou None para separador])
+# Conteúdo do painel de ações: (grupo, [(rótulo, chave do handler, ícone)]).
+# É a fonte única: o painel desenha a partir daqui e o controlador precisa ter um handler
+# para cada chave (um teste garante isso).
+#
+# O painel complementa a barra de cima, não a repete: Undo, Redo, Pull, Terminal e "Abrir"
+# (escolher repositório) ficam só lá.
+# Cada ação aparece uma vez (criar tag fica dentro de "Gerenciar tags").
 MENU_SPEC = [
     ("Sincronizar", [
-        ("Fetch (todos os remotos, com prune)", "fetch"),
-        ("Pull com rebase", "pull_rebase"),
+        ("Fetch (com prune)", "fetch", "refresh.png"),
+        ("Pull com rebase", "pull_rebase", "pull.png"),
     ]),
     ("Integrar", [
-        ("Merge de uma branch na atual…", "merge"),
-        ("Rebase na branch…", "rebase"),
-        None,
-        ("Cherry-pick de um commit…", "cherry_pick"),
-        ("Revert de um commit…", "revert"),
+        ("Merge de uma branch…", "merge", "merge_pr.png"),
+        ("Rebase na branch…", "rebase", "branch.png"),
+        ("Cherry-pick de um commit…", "cherry_pick", "cherry.png"),
+        ("Revert de um commit…", "revert", "revert.png"),
     ]),
-    ("Desfazer e recuperar", [
-        ("Desfazer último commit (mantém as alterações)", "undo_commit"),
-        ("Reflog (histórico do HEAD)…", "reflog"),
-    ]),
-    ("Branches e tags", [
-        ("Renomear branch atual…", "rename_branch"),
-        ("Limpar branches já mescladas…", "clean_merged"),
-        None,
-        ("Criar tag…", "new_tag"),
-        ("Gerenciar tags…", "manage_tags"),
+    ("Branches, tags e histórico", [
+        ("Renomear branch atual…", "rename_branch", "edit.png"),
+        ("Limpar branches mescladas…", "clean_merged", "delete_branch.png"),
+        ("Gerenciar tags…", "manage_tags", "tag.png"),
+        ("Reflog (histórico do HEAD)…", "reflog", "history.png"),
     ]),
     ("Repositório", [
-        ("Abrir repositório no GitHub", "open_repo_web"),
-        ("Abrir branch atual no GitHub", "open_branch_web"),
-        ("Copiar URL do repositório", "copy_repo_url"),
-        None,
-        ("Abrir pasta", "open_folder"),
-        ("Abrir terminal", "open_terminal"),
-        ("Abrir no editor", "open_editor"),
-        None,
-        ("Clonar repositório…", "clone"),
-        ("Inicializar repositório…", "init"),
+        ("Abrir repositório no GitHub", "open_repo_web", "external.png"),
+        ("Abrir branch no GitHub", "open_branch_web", "external.png"),
+        ("Copiar URL do repositório", "copy_repo_url", "copy.png"),
+        ("Abrir no editor", "open_editor", "code.png"),
+        ("Clonar repositório…", "clone", "clone.png"),
+        ("Inicializar repositório…", "init", "folder_plus.png"),
     ]),
 ]
+
+# Quais grupos ficam em cada coluna do painel (índices de MENU_SPEC).
+COLUMNS = ((0, 1, 2), (3,))
 
 OPERATION_NAMES = {"merge": "merge", "rebase": "rebase", "cherry-pick": "cherry-pick", "revert": "revert"}
 
 
 def handler_keys() -> list[str]:
-    return [item[1] for _group, items in MENU_SPEC for item in items if item is not None]
-
-
-def _style() -> dict:
-    # No macOS o menu é nativo e ignora cores; nos demais sistemas acompanha o tema escuro.
-    if sys.platform == "darwin":
-        return {}
-    return {
-        "bg": APP_COLORS["panel"],
-        "fg": APP_COLORS["text"],
-        "activebackground": APP_COLORS["hover"],
-        "activeforeground": APP_COLORS["text"],
-        "bd": 0,
-    }
-
-
-def build_actions_menu(master, handlers: dict, operation: str | None = None) -> tk.Menu:
-    """Menu de ações em grupos. `handlers` mapeia a chave de cada item para um callable.
-
-    Com uma operação parada no meio (conflito), os itens de continuar/abortar vêm primeiro.
-    """
-    style = _style()
-    menu = tk.Menu(master, tearoff=0, **style)
-
-    if operation:
-        name = OPERATION_NAMES.get(operation, operation)
-        menu.add_command(label=f"Continuar {name} (depois de resolver os conflitos)", command=handlers["continue"])
-        menu.add_command(label=f"Abortar {name} em andamento", command=handlers["abort"])
-        menu.add_separator()
-
-    for group, items in MENU_SPEC:
-        submenu = tk.Menu(menu, tearoff=0, **style)
-        for item in items:
-            if item is None:
-                submenu.add_separator()
-                continue
-            label, key = item
-            submenu.add_command(label=label, command=handlers[key])
-        menu.add_cascade(label=group, menu=submenu)
-
-    return menu
+    return [key for _group, items in MENU_SPEC for _label, key, _icon in items]
