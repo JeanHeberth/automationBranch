@@ -10,6 +10,7 @@ from ui.top_bar import TopBar
 from ui.left_sidebar import LeftSidebar
 from ui.center_panel import CenterPanel
 from ui.right_panel import RightPanel
+from ui.diff_viewer import DiffViewer
 from ui.profile_popup import ProfileConnectPopup
 from ui.profile_menu import ProfileMenu
 from ui.delete_branch_popup import DeleteBranchPopup
@@ -34,10 +35,20 @@ from services.branch_delete_service import (
 )
 from services.commit_service import (
     commit_selected_files,
+    get_file_diff,
+    stage_files,
+    unstage_files,
+    discard_changes,
     amend_commit,
     is_last_commit_pushed,
 )
 from services.branch_delete_service import is_protected
+from services.stash_service import (
+    stash_changes,
+    apply_stash,
+    drop_stash,
+    get_stash_diff,
+)
 from services import perf
 from services.repo_snapshot import collect_repo_snapshot
 from services.pull_request_service import (
@@ -134,6 +145,9 @@ class MainWindow(ctk.CTk):
         self.right_panel.grid(row=1, column=2, sticky="nsew")
         self.right_panel.set_on_commit(self.handle_commit)
         self.right_panel.set_on_amend(self.handle_amend)
+        self.right_panel.set_on_file_action(self.handle_file_action)
+        self.right_panel.set_on_stash(self.handle_stash)
+        self.right_panel.set_on_stash_action(self.handle_stash_action)
 
         self.status_label = ctk.CTkLabel(
             self,
@@ -184,6 +198,7 @@ class MainWindow(ctk.CTk):
         self.center_panel.set_current_branch("")
         self.center_panel.set_commit_rows([])
         self.right_panel.set_files_grouped([], [])
+        self.right_panel.set_stashes([])
 
     def _refresh_profile_ui(self):
         session = get_current_session()
@@ -512,6 +527,12 @@ class MainWindow(ctk.CTk):
                         snapshot.changed_files.get("unstaged", [])
                     )
 
+            with perf.timed("UI: right_panel stashes"):
+                if snapshot.stashes_error:
+                    self.right_panel.set_stashes_error(snapshot.stashes_error)
+                else:
+                    self.right_panel.set_stashes(snapshot.stashes)
+
             self.load_pull_requests()
 
     def perform_branch_checkout(self, branch_name: str):
@@ -525,12 +546,22 @@ class MainWindow(ctk.CTk):
         repo_path = self.selected_repo_path
 
         def work():
-            checkout_branch(repo_path, branch_name)
+            try:
+                checkout_branch(repo_path, branch_name)
+            except GitServiceError as exc:
+                # Alterações locais (ou arquivos novos) que o checkout sobrescreveria:
+                # oferecemos guardar em stash.
+                if "overwritten by checkout" in str(exc).lower():
+                    return {"blocked": str(exc)}
+                raise
             return get_current_branch(repo_path)
 
-        def done(current_branch):
-            self.sync_branch_ui(current_branch)
-            self.set_status(f"Checkout realizado com sucesso para: {current_branch}")
+        def done(result):
+            if isinstance(result, dict):
+                self._offer_stash_and_checkout(repo_path, branch_name, result["blocked"])
+                return
+            self.sync_branch_ui(result)
+            self.set_status(f"Checkout realizado com sucesso para: {result}")
 
         # O checkout e a consulta da branch atual são processos git (lentos no Windows):
         # rodam em segundo plano para não travar a janela.
@@ -538,6 +569,34 @@ class MainWindow(ctk.CTk):
             work,
             done,
             busy_message=f"Trocando para a branch {branch_name}...",
+            error_title="Erro no checkout",
+            error_status=f"Falha ao trocar para a branch: {branch_name}",
+        )
+
+    def _offer_stash_and_checkout(self, repo_path: str, branch_name: str, git_message: str):
+        # O checkout falhou sem alterar nada; a UI ainda mostra a branch de destino, então ressincroniza.
+        self.sync_branch_ui()
+
+        if not messagebox.askyesno(
+            "Alterações locais impedem a troca",
+            f"{git_message}\n\nGuardar as alterações em stash e trocar para '{branch_name}'?\n"
+            "Elas ficam na lista de Stashes e podem ser reaplicadas depois."
+        ):
+            self.set_status("Troca de branch cancelada.")
+            return
+
+        def work():
+            stash_changes(repo_path, f"Antes de trocar para {branch_name}")
+            checkout_branch(repo_path, branch_name)
+            return get_current_branch(repo_path)
+
+        self._run_in_background(
+            work,
+            lambda current: (
+                self.sync_branch_ui(current),
+                self.set_status(f"Alterações guardadas em stash. Branch atual: {current}"),
+            ),
+            busy_message="Guardando alterações e trocando de branch...",
             error_title="Erro no checkout",
             error_status=f"Falha ao trocar para a branch: {branch_name}",
         )
@@ -568,19 +627,167 @@ class MainWindow(ctk.CTk):
             )
             return
 
-        try:
-            result = commit_selected_files(self.selected_repo_path, commit_message, selected_files)
+        repo_path = self.selected_repo_path
 
-            current_branch = get_current_branch(self.selected_repo_path)
-            self.sync_branch_ui(current_branch)
-            self.right_panel.clear_commit_message()
+        # Commit roda em segundo plano: em repositórios grandes (ou no Windows) o git é lento.
+        self._run_in_background(
+            lambda: commit_selected_files(repo_path, commit_message, selected_files),
+            self._finish_commit,
+            busy_message="Executando commit...",
+            error_title="Erro no commit",
+            error_status="Falha ao executar commit.",
+        )
 
-            self.set_status("Commit realizado com sucesso.")
-            messagebox.showinfo("Commit", result or "Commit realizado com sucesso.")
+    def _finish_commit(self, result):
+        self.sync_branch_ui()
+        self.right_panel.clear_commit_message()
+        self.set_status("Commit realizado com sucesso.")
+        messagebox.showinfo("Commit", result or "Commit realizado com sucesso.")
 
-        except GitServiceError as exc:
-            messagebox.showerror("Erro no commit", str(exc))
-            self.set_status("Falha ao executar commit.")
+    def handle_file_action(self, action: str, kind: str, path: str, status: str):
+        if not self.selected_repo_path:
+            return
+
+        repo_path = self.selected_repo_path
+
+        if action == "diff":
+            self._show_file_diff(repo_path, path, kind, status)
+            return
+
+        if action == "discard" and not messagebox.askyesno(
+            "Descartar alterações",
+            f"Descartar as alterações de:\n{path}\n\nEsta ação é irreversível.",
+            icon="warning",
+        ):
+            return
+
+        work, busy, ok = {
+            "stage": (lambda: stage_files(repo_path, [path]), "Adicionando ao stage...", "Arquivo adicionado ao stage."),
+            "unstage": (lambda: unstage_files(repo_path, [path]), "Removendo do stage...", "Arquivo removido do stage."),
+            "discard": (lambda: discard_changes(repo_path, [path]), "Descartando alterações...", "Alterações descartadas."),
+        }[action]
+
+        self._run_in_background(
+            work,
+            lambda _result: (self.sync_branch_ui(), self.set_status(ok)),
+            busy_message=busy,
+            error_title="Erro Git",
+            error_status="Falha ao atualizar o arquivo.",
+        )
+
+    def handle_stash(self):
+        if not self.selected_repo_path:
+            messagebox.showwarning(
+                "Repositório não selecionado",
+                "Selecione um repositório antes de usar o stash."
+            )
+            return
+
+        selected_files = self.right_panel.get_selected_files()
+
+        if not selected_files:
+            messagebox.showwarning(
+                "Nenhum arquivo selecionado",
+                "Marque ao menos um arquivo para guardar em stash."
+            )
+            return
+
+        message = ask_string("Stash", "Descrição do stash (opcional):")
+        if message is None:
+            return
+
+        repo_path = self.selected_repo_path
+
+        self._run_in_background(
+            lambda: stash_changes(repo_path, message, selected_files),
+            lambda _result: (self.sync_branch_ui(), self.set_status("Alterações guardadas em stash.")),
+            busy_message="Guardando em stash...",
+            error_title="Erro no stash",
+            error_status="Falha ao criar stash.",
+        )
+
+    def handle_stash_action(self, action: str, ref: str):
+        if not self.selected_repo_path:
+            return
+
+        repo_path = self.selected_repo_path
+
+        if action == "diff":
+            self._show_stash_diff(repo_path, ref)
+            return
+
+        if action == "drop":
+            if not messagebox.askyesno(
+                "Descartar stash",
+                f"Descartar {ref}?\n\nEsta ação é irreversível.",
+                icon="warning",
+            ):
+                return
+            self._run_in_background(
+                lambda: drop_stash(repo_path, ref),
+                lambda _result: (self.sync_branch_ui(), self.set_status(f"{ref} descartado.")),
+                busy_message="Descartando stash...",
+                error_title="Erro no stash",
+                error_status="Falha ao descartar stash.",
+            )
+            return
+
+        drop = action == "pop"
+
+        def work():
+            # Conflito não é falha total: o git mantém o stash e deixa os marcadores nos arquivos.
+            try:
+                apply_stash(repo_path, ref, drop=drop)
+            except GitServiceError as exc:
+                return str(exc)
+            return None
+
+        def done(conflict_message):
+            self.sync_branch_ui()
+            if conflict_message:
+                self.set_status(f"{ref} aplicado com problemas; o stash foi mantido.")
+                messagebox.showwarning(
+                    "Stash não aplicado por completo",
+                    f"{conflict_message}\n\nO stash foi mantido. Resolva os conflitos nos arquivos "
+                    "e descarte o stash manualmente depois."
+                )
+            else:
+                self.set_status(f"{ref} {'aplicado e removido' if drop else 'aplicado'}.")
+
+        self._run_in_background(
+            work,
+            done,
+            busy_message=f"{'Pop' if drop else 'Aplicando'} {ref}...",
+            error_title="Erro no stash",
+            error_status="Falha ao aplicar stash.",
+        )
+
+    def _show_stash_diff(self, repo_path: str, ref: str):
+        def runner():
+            try:
+                diff = get_stash_diff(repo_path, ref)
+            except Exception as exc:
+                self._safe_after(lambda e=exc: messagebox.showerror("Erro ao carregar diff", str(e)))
+            else:
+                self._safe_after(lambda: DiffViewer(self, ref, diff))
+
+        threading.Thread(target=runner, daemon=True).start()
+
+    def _show_file_diff(self, repo_path: str, path: str, kind: str, status: str):
+        staged = kind == "staged"
+        untracked = not staged and status == "?"
+        title = f"{path} ({'staged' if staged else 'não staged'})"
+
+        def runner():
+            try:
+                diff = get_file_diff(repo_path, path, staged, untracked)
+            except Exception as exc:
+                self._safe_after(lambda e=exc: messagebox.showerror("Erro ao carregar diff", str(e)))
+            else:
+                self._safe_after(lambda: DiffViewer(self, title, diff))
+
+        # Só leitura: não usa o bloqueio de operações Git, para poder abrir o diff a qualquer hora.
+        threading.Thread(target=runner, daemon=True).start()
 
     def handle_amend(self):
         if not self.selected_repo_path:

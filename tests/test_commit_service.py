@@ -136,3 +136,91 @@ def test_commit_selected_files_valida_entradas(git_repo):
         commit_selected_files(git_repo, "  ", ["a.txt"])
     with pytest.raises(GitServiceError):
         commit_selected_files(git_repo, "msg", [])
+
+
+def test_get_file_diff_unstaged_staged_e_novo(git_repo):
+    from services.commit_service import get_file_diff
+
+    (open(f"{git_repo}/README.md", "a")).write("linha nova\n")
+    (open(f"{git_repo}/novo.txt", "w")).write("conteudo\n")
+
+    unstaged = get_file_diff(git_repo, "README.md", staged=False)
+    assert "+linha nova" in unstaged
+
+    assert get_file_diff(git_repo, "README.md", staged=True) == "(sem diferenças)"
+
+    _git_out(git_repo, "add", "README.md")
+    assert "+linha nova" in get_file_diff(git_repo, "README.md", staged=True)
+
+    novo = get_file_diff(git_repo, "novo.txt", staged=False, untracked=True)
+    assert "+conteudo" in novo and "--- /dev/null" in novo
+
+
+def test_get_file_diff_binario_e_truncamento(git_repo, monkeypatch):
+    from services import commit_service
+    from services.commit_service import get_file_diff
+
+    (open(f"{git_repo}/bin.dat", "wb")).write(b"\x00\x01\x02")
+    assert get_file_diff(git_repo, "bin.dat", False, untracked=True) == "(arquivo binário)"
+
+    monkeypatch.setattr(commit_service, "MAX_DIFF_CHARS", 50)
+    (open(f"{git_repo}/grande.txt", "w")).write("x\n" * 100)
+    assert get_file_diff(git_repo, "grande.txt", False, untracked=True).endswith("diff truncado ...")
+
+
+def test_stage_e_unstage_files(git_repo):
+    from services.commit_service import stage_files, unstage_files
+
+    (open(f"{git_repo}/a.txt", "w")).write("a")
+    stage_files(git_repo, ["a.txt"])
+    assert _git_out(git_repo, "diff", "--cached", "--name-only") == "a.txt"
+
+    unstage_files(git_repo, ["a.txt"])
+    assert _git_out(git_repo, "diff", "--cached", "--name-only") == ""
+    assert (open(f"{git_repo}/a.txt").read()) == "a"
+
+
+def test_unstage_renomeacao_completa(git_repo):
+    from services.commit_service import unstage_files
+
+    _git_out(git_repo, "mv", "README.md", "LEIAME.md")
+    unstage_files(git_repo, ["LEIAME.md"])
+
+    assert _git_out(git_repo, "diff", "--cached", "--name-only") == ""
+
+
+def test_discard_changes_rastreado_e_novo(git_repo):
+    import os
+    from services.commit_service import discard_changes
+
+    (open(f"{git_repo}/README.md", "a")).write("lixo\n")
+    (open(f"{git_repo}/novo.txt", "w")).write("x")
+
+    discard_changes(git_repo, ["README.md", "novo.txt"])
+
+    assert "lixo" not in open(f"{git_repo}/README.md").read()
+    assert not os.path.exists(f"{git_repo}/novo.txt")
+
+
+def test_discard_preserva_o_que_esta_em_stage(git_repo):
+    from services.commit_service import discard_changes
+
+    (open(f"{git_repo}/README.md", "a")).write("no stage\n")
+    _git_out(git_repo, "add", "README.md")
+    (open(f"{git_repo}/README.md", "a")).write("so no disco\n")
+
+    discard_changes(git_repo, ["README.md"])
+
+    content = open(f"{git_repo}/README.md").read()
+    assert "no stage" in content and "so no disco" not in content
+
+
+def test_arquivos_com_espaco_e_acento(git_repo):
+    from services.commit_service import commit_selected_files, get_changed_files_grouped
+
+    (open(f"{git_repo}/relatório final.txt", "w")).write("x")
+    grouped = get_changed_files_grouped(git_repo)
+    assert grouped["unstaged"] == ["? | relatório final.txt"]
+
+    commit_selected_files(git_repo, "acentos", ["relatório final.txt"])
+    assert _git_out(git_repo, "status", "--short") == ""
