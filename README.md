@@ -87,7 +87,7 @@ automationBranch/
 ├── ui/                     # Camada de interface (CustomTkinter)
 │   ├── main_window.py       # Janela principal e orquestração das ações
 │   ├── top_bar.py           # Barra do topo (responsiva, com menu ⋯ para botões escondidos)
-│   ├── left_sidebar.py
+│   ├── left_sidebar.py      # Barra lateral (Local, Remote, Pull Requests; Cloud Patches, Issues e Teams são reservados)
 │   ├── center_panel.py      # Grafo de commits e HoverTooltip (janela única reaproveitada)
 │   ├── window_position.py   # Posição de popups e menus com várias telas
 │   ├── right_panel.py       # Arquivos (checkboxes, stage/unstage/descartar), stashes e commit
