@@ -41,7 +41,11 @@ def main():
         _report_startup_error(exc)
         raise SystemExit(1) from exc
 
-    app.mainloop()
+    try:
+        app.mainloop()
+    except KeyboardInterrupt:
+        # Ctrl+C ou o botão Stop do IDE (SIGINT): encerra sem imprimir o traceback.
+        raise SystemExit(130)
 
 
 if __name__ == "__main__":
