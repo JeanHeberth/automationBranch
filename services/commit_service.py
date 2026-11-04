@@ -130,6 +130,39 @@ def commit_all_changes(repo_path: str, message: str) -> str:
     return run_git_command(repo_path, ["commit", "-m", clean_message])
 
 
+def _rename_origins(repo_path: str, paths: List[str]) -> List[str]:
+    """Origens das renomeações cujo destino está em `paths` (para o rename entrar completo)."""
+    output = run_git_command(repo_path, ["status", "--short"], strip=False)
+    selected = set(paths)
+    origins = []
+
+    for line in (output or "").splitlines():
+        if len(line) > 3 and " -> " in line:
+            origin, destination = line[3:].strip().split(" -> ", 1)
+            if destination in selected:
+                origins.append(origin)
+
+    return origins
+
+
+def commit_selected_files(repo_path: str, message: str, paths: List[str]) -> str:
+    """Commita apenas os `paths` informados; o restante (inclusive o já em stage) fica intacto."""
+    clean_message = message.strip()
+
+    if not clean_message:
+        raise GitServiceError("A mensagem de commit não pode estar vazia.")
+
+    if not paths:
+        raise GitServiceError("Selecione ao menos um arquivo para o commit.")
+
+    targets = list(dict.fromkeys(paths + _rename_origins(repo_path, paths)))
+
+    # "add -A -- <paths>" cobre arquivos novos e removidos; "commit --only" ignora o resto do stage.
+    # A origem de um rename já saiu do índice e do disco, então só os destinos vão no "add".
+    run_git_command(repo_path, ["add", "-A", "--", *paths])
+    return run_git_command(repo_path, ["commit", "--only", "-m", clean_message, "--", *targets])
+
+
 def is_last_commit_pushed(repo_path: str, branch_name: str) -> bool:
     """True se o último commit já existe no upstream (amend exigirá force push)."""
     if not has_upstream(repo_path, branch_name):
@@ -139,15 +172,29 @@ def is_last_commit_pushed(repo_path: str, branch_name: str) -> bool:
     return ahead.strip() == "0"
 
 
-def amend_commit(repo_path: str, message: str | None = None) -> str:
-    """Inclui as alterações atuais no último commit.
+def amend_commit(repo_path: str, message: str | None = None, paths: List[str] | None = None) -> str:
+    """Inclui alterações no último commit.
 
-    Sem mensagem, mantém a mensagem original (`--no-edit`).
+    Com `paths`, só esses arquivos entram (o restante, inclusive o já em stage, fica
+    intacto); lista vazia altera apenas a mensagem. Sem `paths`, inclui tudo.
+    Sem mensagem, mantém a original (`--no-edit`).
     """
-    stage_all_changes(repo_path)
-
     clean_message = (message or "").strip()
-    if clean_message:
-        return run_git_command(repo_path, ["commit", "--amend", "-m", clean_message])
 
-    return run_git_command(repo_path, ["commit", "--amend", "--no-edit"])
+    if paths is None:
+        stage_all_changes(repo_path)
+        targets: List[str] = []
+        scope: List[str] = []
+    else:
+        if not paths and not clean_message:
+            raise GitServiceError("Selecione ao menos um arquivo ou digite uma nova mensagem.")
+        if paths:
+            # Origem de rename já saiu do índice e do disco: só os destinos vão no "add".
+            run_git_command(repo_path, ["add", "-A", "--", *paths])
+        targets = list(dict.fromkeys(paths + _rename_origins(repo_path, paths)))
+        scope = ["--only"]
+
+    message_args = ["-m", clean_message] if clean_message else ["--no-edit"]
+    path_args = ["--", *targets] if targets else []
+
+    return run_git_command(repo_path, ["commit", "--amend", *scope, *message_args, *path_args])
