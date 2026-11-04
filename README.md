@@ -25,6 +25,11 @@ Desenvolvida em Python com foco em produtividade, visual moderno e facilidade de
   (descartar pede confirmação e é irreversível)
 - 📦 **Stashes**: botão Stash guarda só os arquivos marcados (inclui arquivos novos); lista no
   painel com diff, Aplicar, Pop e Descartar. Conflito ao reaplicar mantém o stash e avisa
+- 🔎 **Busca global** (lupa do topo ou `Cmd+K` / `Ctrl+K`):
+    - **Commits** em todas as branches, por mensagem, autor, hash ou **código** ("quem adicionou ou
+      removeu este texto?", `git log -S`); o resultado abre o diff do commit
+    - **Arquivos** por nome ou caminho, com o histórico do arquivo (seguindo renomeações)
+    - **Branches** locais e remotas; escolher faz o checkout (remotas criam a branch local)
 - ✏️ Amend com proteção de branch protegida e force push guiado (`--force-with-lease`)
 - 🔀 Pull Requests: abrir, acompanhar o estado dos checks e mergear (inclusive merge automático
   quando os checks passam)
@@ -52,6 +57,7 @@ automationBranch/
 │   ├── center_panel.py
 │   ├── right_panel.py       # Arquivos (checkboxes, stage/unstage/descartar), stashes e commit
 │   ├── diff_viewer.py       # Janela de diff com cores
+│   ├── search_dialog.py     # Busca global (commits, arquivos, branches)
 │   ├── profile_popup.py     # Janela "Conectar conta"
 │   ├── profile_menu.py
 │   ├── device_login_dialog.py  # Código do Device Flow do GitHub
@@ -63,6 +69,7 @@ automationBranch/
 │   ├── branch_delete_service.py
 │   ├── commit_service.py    # commit/amend por seleção, diff, stage/unstage/descartar
 │   ├── stash_service.py     # criar, listar, aplicar, pop e descartar stashes
+│   ├── search_service.py    # busca de commits, arquivos, histórico de arquivo e branches
 │   ├── repo_snapshot.py     # coleta em paralelo o que a UI precisa redesenhar
 │   ├── sync_service.py      # pull / push
 │   ├── pull_request_service.py
@@ -227,6 +234,7 @@ as operações de Pull Request.
 - [x] Diff por arquivo
 - [x] Stage / unstage / descartar alterações por arquivo
 - [x] Stash com lista, diff, aplicar, pop e descartar
+- [x] Busca global de commits, arquivos e branches
 - [x] Commit e login em segundo plano (sem travar a janela)
 
 ### 🔥 Em desenvolvimento
