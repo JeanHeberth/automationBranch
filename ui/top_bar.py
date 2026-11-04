@@ -1,3 +1,5 @@
+import tkinter as tk
+
 import customtkinter as ctk
 from ui.theme import APP_COLORS, load_icon
 
@@ -179,6 +181,33 @@ class TopBar(ctk.CTkFrame):
                 )
                 sep.grid(row=0, column=col, padx=5, pady=7, sticky="ns")
                 col += 1
+
+        if self.hidden_actions:
+            self.more_btn = ctk.CTkButton(
+                self.center_wrapper, text="⋯", width=30, height=30,
+                fg_color="transparent", hover_color="#2e3948", text_color=APP_COLORS["text"],
+                corner_radius=8, font=ctk.CTkFont(size=16, weight="bold"),
+                command=self._show_hidden_menu,
+            )
+            self.more_btn.grid(row=0, column=col, padx=(6, 1))
+
+    def _show_hidden_menu(self):
+        """Menu com os botões que não cabem na barra nesta largura."""
+        menu = tk.Menu(
+            self, tearoff=0,
+            bg="#111827", fg=APP_COLORS["text"],
+            activebackground="#1f2937", activeforeground=APP_COLORS["text"],
+            bd=0, font=("TkDefaultFont", 11),
+        )
+        for label in self.hidden_actions:
+            menu.add_command(label=label, command=lambda a=label: self.on_action(a))
+
+        x = self.more_btn.winfo_rootx()
+        y = self.more_btn.winfo_rooty() + self.more_btn.winfo_height() + 4
+        try:
+            menu.tk_popup(x, y)
+        finally:
+            menu.grab_release()
 
     def _get_visible_center_actions(self):
         width = max(self.center_wrapper.winfo_width(), 1)
