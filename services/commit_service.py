@@ -202,6 +202,20 @@ def get_file_diff(repo_path: str, path: str, staged: bool, untracked: bool = Fal
     return diff
 
 
+def get_commit_diff(repo_path: str, commit_hash: str) -> str:
+    """Cabeçalho, resumo por arquivo e diff completo de um commit."""
+    diff = run_git_command(
+        repo_path,
+        ["show", "--format=fuller", "--stat", "--patch", commit_hash],
+        strip=False,
+    )
+
+    if len(diff) > MAX_DIFF_CHARS:
+        return diff[:MAX_DIFF_CHARS] + "\n\n... diff truncado ..."
+
+    return diff
+
+
 def stage_files(repo_path: str, paths: List[str]) -> str:
     if not paths:
         raise GitServiceError("Nenhum arquivo informado.")
