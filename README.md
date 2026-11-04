@@ -53,6 +53,8 @@ Desenvolvida em Python com foco em produtividade, visual moderno e facilidade de
 - 📐 **Barra do topo responsiva:** em janelas estreitas os botões que não cabem (Branch, Delete
   Branch, Stash, Pop, Open PR, Merge PR e Terminal) vão para o menu **⋯**, que só aparece quando
   há algo escondido
+- 💬 **Tooltips** em todos os botões da barra do topo: ao passar o mouse aparece o nome da função
+  (útil nos botões só de ícone e no menu ⋯)
 - 🔤 Acentos corretos nas mensagens de commit no Windows (a saída do Git é lida como UTF-8)
 - 🛡️ Ações que reescrevem histórico (rebase, desfazer commit, voltar no reflog) são bloqueadas
   em branches protegidas (`main`, `master`, `develop`) e `reset --hard` recusa alterações não
@@ -301,7 +303,7 @@ as operações de Pull Request.
 - [x] Busca global de commits, arquivos, branches, Pull Requests e conteúdo dos arquivos
 - [x] Undo / Redo do topo (desfazer e refazer commit)
 - [x] Painel de ações: fetch, merge, rebase, cherry-pick, revert, reflog, tags, abrir no GitHub/editor, clonar
-- [x] Barra do topo responsiva com menu ⋯ e correção de acentos (UTF-8) no Windows
+- [x] Barra do topo responsiva com menu ⋯, tooltips nos botões e correção de acentos (UTF-8) no Windows
 - [x] Commit e login em segundo plano (sem travar a janela)
 
 ### 🔥 Em desenvolvimento
