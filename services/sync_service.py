@@ -2,11 +2,14 @@ from services.git_runner import run_git_command, GitServiceError, NETWORK_TIMEOU
 from services.branch_service import get_current_branch, has_upstream, get_remotes
 
 
-def git_pull(repo_path: str) -> str:
+def git_pull(repo_path: str, rebase: bool = False) -> str:
+    """Pull. Com `rebase`, reaplica os commits locais sobre o remoto (guardando alterações
+    não commitadas com --autostash) em vez de criar um merge commit."""
     current_branch = get_current_branch(repo_path)
+    flags = ["--rebase", "--autostash"] if rebase else []
 
     if has_upstream(repo_path, current_branch):
-        return run_git_command(repo_path, ["pull"], timeout=NETWORK_TIMEOUT)
+        return run_git_command(repo_path, ["pull", *flags], timeout=NETWORK_TIMEOUT)
 
     # Sem upstream configurado: tenta puxar de origin/<branch> se ela existir no remoto.
     if "origin" not in get_remotes(repo_path):
@@ -27,7 +30,7 @@ def git_pull(repo_path: str) -> str:
         )
 
     return run_git_command(
-        repo_path, ["pull", "origin", current_branch], timeout=NETWORK_TIMEOUT
+        repo_path, ["pull", *flags, "origin", current_branch], timeout=NETWORK_TIMEOUT
     )
 
 

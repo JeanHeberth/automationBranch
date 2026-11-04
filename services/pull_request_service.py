@@ -132,6 +132,11 @@ def _get_repo_info(repo_path: str) -> tuple[str, str]:
     return owner, repo
 
 
+def get_repo_owner_and_name(repo_path: str) -> tuple[str, str]:
+    """(dono, repositório) do GitHub, a partir do remote origin. Usado para montar links."""
+    return _get_repo_info(repo_path)
+
+
 def _resolve_access_token(require_token: bool = False) -> str | None:
     session = load_session()
     token = session.get("access_token") or os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN")
