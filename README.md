@@ -55,6 +55,10 @@ Desenvolvida em Python com foco em produtividade, visual moderno e facilidade de
   há algo escondido
 - 💬 **Tooltips** em todos os botões da barra do topo: ao passar o mouse aparece o nome da função
   (útil nos botões só de ícone e no menu ⋯)
+- 🖥️ **Várias telas** (monitor externo, iPad como tela estendida): popups e menus abrem sobre a
+  janela do app, na tela onde o mouse está, e o painel de ações e o menu de perfil ficam presos à
+  janela. Os diálogos só aparecem depois de posicionados (evita um quadrado preto parado na tela
+  no macOS), e o Deletar Branch é compacto para caber em telas menores
 - 🔤 Acentos corretos nas mensagens de commit no Windows (a saída do Git é lida como UTF-8)
 - 🛡️ Ações que reescrevem histórico (rebase, desfazer commit, voltar no reflog) são bloqueadas
   em branches protegidas (`main`, `master`, `develop`) e `reset --hard` recusa alterações não
@@ -84,7 +88,8 @@ automationBranch/
 │   ├── main_window.py       # Janela principal e orquestração das ações
 │   ├── top_bar.py           # Barra do topo (responsiva, com menu ⋯ para botões escondidos)
 │   ├── left_sidebar.py
-│   ├── center_panel.py
+│   ├── center_panel.py      # Grafo de commits e HoverTooltip (janela única reaproveitada)
+│   ├── window_position.py   # Posição de popups e menus com várias telas
 │   ├── right_panel.py       # Arquivos (checkboxes, stage/unstage/descartar), stashes e commit
 │   ├── diff_viewer.py       # Janela de diff com cores
 │   ├── search_dialog.py     # Busca global (commits, arquivos, branches, PRs, conteúdo)
@@ -185,6 +190,8 @@ Sem isso o app abre normalmente, mas o botão "Continuar com GitHub" avisa que f
 ```bash
 python main.py
 ```
+
+Ctrl+C no terminal (ou o botão Stop do IDE) encerra o app sem mostrar traceback.
 
 ---
 
@@ -303,6 +310,7 @@ as operações de Pull Request.
 - [x] Busca global de commits, arquivos, branches, Pull Requests e conteúdo dos arquivos
 - [x] Undo / Redo do topo (desfazer e refazer commit)
 - [x] Painel de ações: fetch, merge, rebase, cherry-pick, revert, reflog, tags, abrir no GitHub/editor, clonar
+- [x] Suporte a várias telas (monitor externo e iPad) no posicionamento de popups e menus
 - [x] Barra do topo responsiva com menu ⋯, tooltips nos botões e correção de acentos (UTF-8) no Windows
 - [x] Commit e login em segundo plano (sem travar a janela)
 
