@@ -3,16 +3,26 @@ from ui.theme import APP_COLORS
 
 
 class BaseBranchPopup(ctk.CTkToplevel):
-    """Select modal para escolher a branch base (protegida) do Pull Request."""
+    """Select modal para escolher uma branch (base do PR por padrão; serve também para merge,
+    rebase e limpeza de branches)."""
 
-    def __init__(self, master, options: list[str]):
+    def __init__(
+        self,
+        master,
+        options: list[str],
+        title: str = "Abrir Pull Request",
+        label: str = "Branch base do PR",
+        confirm_text: str = "Continuar",
+    ):
         super().__init__(master)
 
         self.options = options
+        self._label = label
+        self._confirm_text = confirm_text
         self.selection: str | None = None
         self.branch_var = ctk.StringVar(value=options[0] if options else "")
 
-        self.title("Abrir Pull Request")
+        self.title(title)
         self.geometry("380x200")
         self.resizable(False, False)
         self.configure(fg_color=APP_COLORS["panel"])
@@ -29,7 +39,7 @@ class BaseBranchPopup(ctk.CTkToplevel):
 
         ctk.CTkLabel(
             container,
-            text="Branch base do PR",
+            text=self._label,
             text_color=APP_COLORS["text"],
             font=ctk.CTkFont(size=16, weight="bold"),
         ).pack(anchor="w", pady=(0, 8))
@@ -44,7 +54,7 @@ class BaseBranchPopup(ctk.CTkToplevel):
         buttons.pack(fill="x", side="bottom")
 
         ctk.CTkButton(buttons, text="Cancelar", width=100, command=self.destroy).pack(side="right")
-        ctk.CTkButton(buttons, text="Continuar", width=100, command=self._confirm).pack(
+        ctk.CTkButton(buttons, text=self._confirm_text, width=100, command=self._confirm).pack(
             side="right", padx=(0, 8)
         )
 
