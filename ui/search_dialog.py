@@ -261,7 +261,8 @@ class SearchDialog(ctk.CTkToplevel):
             try:
                 data = work()
             except Exception as exc:
-                self._deliver(token, lambda: self._show_error(str(exc)))
+                message = str(exc)
+                self._deliver(token, lambda: self._show_error(message))
             else:
                 self._deliver(token, lambda: render(data, header) if header else render(data))
 
