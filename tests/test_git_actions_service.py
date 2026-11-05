@@ -409,8 +409,14 @@ def test_clone_e_validacoes(git_repo, tmp_path):
 
 
 def test_clone_de_url_inexistente_falha(tmp_path):
+    # Pasta que existe mas não é um repositório: o clone falha em qualquer sistema.
+    origem = tmp_path / "nao-e-repo"
+    origem.mkdir()
+    destino = tmp_path / "destino"
+    destino.mkdir()
+
     with pytest.raises(GitServiceError):
-        ga.clone_repository(str(tmp_path / "nao-e-repo"), str(tmp_path))
+        ga.clone_repository(str(origem), str(destino))
 
 
 def test_init_repository(tmp_path):
