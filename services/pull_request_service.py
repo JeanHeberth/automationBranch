@@ -7,6 +7,7 @@ import requests
 
 from services.branch_service import get_origin_remote_url, get_current_branch
 from services.git_runner import GitServiceError
+from services.perf import timed
 from services.session_service import load_session
 
 
@@ -120,7 +121,25 @@ def _parse_github_repo(origin_url: str) -> tuple[str | None, str | None]:
     return parts[0], parts[1]
 
 
+# `git remote get-url origin` é um processo git (200 ms+ no Windows) chamado a cada consulta
+# de PR; a URL do origin quase nunca muda, então o resultado fica em cache por um tempo.
+_REPO_INFO_CACHE: Dict[str, tuple] = {}
+_REPO_INFO_TTL = 300.0
+
+
+def invalidate_repo_info_cache(repo_path: str | None = None) -> None:
+    if repo_path is None:
+        _REPO_INFO_CACHE.clear()
+    else:
+        _REPO_INFO_CACHE.pop(repo_path, None)
+
+
 def _get_repo_info(repo_path: str) -> tuple[str, str]:
+    now = time.monotonic()
+    cached = _REPO_INFO_CACHE.get(repo_path)
+    if cached is not None and now - cached[0] < _REPO_INFO_TTL:
+        return cached[1]
+
     origin_url = get_origin_remote_url(repo_path)
     owner, repo = _parse_github_repo(origin_url)
 
@@ -129,6 +148,8 @@ def _get_repo_info(repo_path: str) -> tuple[str, str]:
             "Não foi possível identificar o repositório GitHub a partir do remote origin."
         )
 
+    # Só guarda sucesso: se o origin estiver ausente ou inválido, a próxima chamada tenta de novo.
+    _REPO_INFO_CACHE[repo_path] = (now, (owner, repo))
     return owner, repo
 
 
@@ -566,11 +587,12 @@ def get_pull_request_merge_status(
         )
 
     try:
-        response = requests.get(f"{base_url}/pulls/{pr_number}", headers=headers, timeout=10)
-        response.raise_for_status()
-        pull = response.json()
+        with timed(f"API GitHub: status do PR #{pr_number}"):
+            response = requests.get(f"{base_url}/pulls/{pr_number}", headers=headers, timeout=10)
+            response.raise_for_status()
+            pull = response.json()
 
-        result = _derive_status(pull, load_checks)
+            result = _derive_status(pull, load_checks)
 
     except requests.RequestException as exc:
         raise GitServiceError(

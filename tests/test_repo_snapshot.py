@@ -51,9 +51,53 @@ def test_snapshot_erro_de_branches_propaga(git_repo, monkeypatch):
     def falha(*a, **k):
         raise GitServiceError("sem repo")
 
-    monkeypatch.setattr(repo_snapshot, "get_local_and_remote_branches", falha)
+    monkeypatch.setattr(repo_snapshot, "get_branch_overview", falha)
 
     import pytest
 
     with pytest.raises(GitServiceError, match="sem repo"):
         collect_repo_snapshot(git_repo)
+
+
+def test_snapshot_usa_poucos_processos_git(git_repo, monkeypatch):
+    import subprocess
+
+    comandos = []
+    original = subprocess.run
+
+    def conta(cmd, *a, **k):
+        comandos.append(cmd[3:5])
+        return original(cmd, *a, **k)
+
+    monkeypatch.setattr("services.git_runner.subprocess.run", conta)
+
+    snapshot = collect_repo_snapshot(git_repo)
+
+    assert snapshot.branch == "main"
+    # for-each-ref (branches + remotes + atual), status, log, stash list — mais `git remote`
+    # porque este repositório não tem nenhum remote buscado.
+    assert sorted(c[0] for c in comandos) == sorted(["for-each-ref", "-c", "log", "stash", "remote"])
+
+
+def test_snapshot_com_remote_buscado_dispensa_git_remote(git_repo, monkeypatch):
+    import subprocess
+
+    subprocess.run(["git", "-C", git_repo, "update-ref", "refs/remotes/origin/main", "HEAD"], check=True)
+    chamadas = []
+    original = repo_snapshot.get_remotes
+    monkeypatch.setattr(repo_snapshot, "get_remotes", lambda r: chamadas.append(r) or original(r))
+
+    snapshot = collect_repo_snapshot(git_repo)
+
+    assert snapshot.remotes == ["origin"]
+    assert chamadas == []
+
+
+def test_snapshot_head_destacado_cai_no_hash_abreviado(git_repo):
+    import subprocess
+
+    subprocess.run(["git", "-C", git_repo, "checkout", "--detach"], check=True, capture_output=True)
+
+    snapshot = collect_repo_snapshot(git_repo)
+
+    assert snapshot.branch and snapshot.branch != "main"
