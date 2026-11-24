@@ -24,6 +24,24 @@ def test_snapshot_usa_branch_informada_sem_consultar(git_repo, monkeypatch):
     assert collect_repo_snapshot(git_repo, "main").branch == "main"
 
 
+def test_snapshot_sem_branch_busca_log_de_head_em_paralelo(git_repo, monkeypatch):
+    # O log não espera o for-each-ref descobrir o nome da branch: usa HEAD direto.
+    revisoes = []
+    original = repo_snapshot.get_recent_commit_rows
+
+    def espia(repo, revisao, limite):
+        revisoes.append(revisao)
+        return original(repo, revisao, limite)
+
+    monkeypatch.setattr(repo_snapshot, "get_recent_commit_rows", espia)
+
+    snapshot = collect_repo_snapshot(git_repo)
+
+    assert revisoes == ["HEAD"]
+    assert snapshot.branch == "main"
+    assert [row["subject"] for row in snapshot.commit_rows] == ["primeiro commit"]
+
+
 def test_snapshot_reporta_arquivos_alterados(git_repo):
     import pathlib
 

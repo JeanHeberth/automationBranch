@@ -557,12 +557,12 @@ class MainWindow(ctk.CTk):
 
         threading.Thread(target=runner, daemon=True).start()
 
-    def sync_branch_ui(self, branch_name: str | None = None):
+    def sync_branch_ui(self, branch_name: str | None = None, on_applied=None):
         """Atualiza branches, commits e arquivos alterados sem travar a janela.
 
         Os comandos git rodam em paralelo numa thread (collect_repo_snapshot); a UI só
         é tocada de volta na thread principal. Se `branch_name` for None, a branch atual
-        é descoberta na própria coleta.
+        é descoberta na própria coleta. `on_applied(branch)` roda depois que a tela é atualizada.
         """
         if not self.selected_repo_path:
             return
@@ -582,6 +582,8 @@ class MainWindow(ctk.CTk):
             ):
                 return
             self._apply_snapshot(snapshot)
+            if on_applied is not None:
+                on_applied(snapshot.branch)
 
         def fail(exc):
             if not self.winfo_exists() or token != self._sync_token:
@@ -666,14 +668,16 @@ class MainWindow(ctk.CTk):
                 if "overwritten by checkout" in str(exc).lower():
                     return {"blocked": str(exc)}
                 raise
-            return get_current_branch(repo_path)
+            return None
 
         def done(result):
             if isinstance(result, dict):
                 self._offer_stash_and_checkout(repo_path, branch_name, result["blocked"])
                 return
-            self.sync_branch_ui(result)
-            self.set_status(f"Checkout realizado com sucesso para: {result}")
+            # A branch atual sai do próprio snapshot (for-each-ref): sem `git branch --show-current`.
+            self.sync_branch_ui(
+                on_applied=lambda current: self.set_status(f"Checkout realizado com sucesso para: {current}")
+            )
 
         # O checkout e a consulta da branch atual são processos git (lentos no Windows):
         # rodam em segundo plano para não travar a janela.
@@ -700,13 +704,13 @@ class MainWindow(ctk.CTk):
         def work():
             stash_changes(repo_path, f"Antes de trocar para {branch_name}")
             checkout_branch(repo_path, branch_name)
-            return get_current_branch(repo_path)
 
         self._run_in_background(
             work,
-            lambda current: (
-                self.sync_branch_ui(current),
-                self.set_status(f"Alterações guardadas em stash. Branch atual: {current}"),
+            lambda _result: self.sync_branch_ui(
+                on_applied=lambda current: self.set_status(
+                    f"Alterações guardadas em stash. Branch atual: {current}"
+                )
             ),
             busy_message="Guardando alterações e trocando de branch...",
             error_title="Erro no checkout",
@@ -1557,18 +1561,14 @@ class MainWindow(ctk.CTk):
 
             repo_path = self.selected_repo_path
 
-            def create():
-                result = create_branch(repo_path, branch_name)
-                return result, get_current_branch(repo_path)
-
-            def created(outcome):
-                result, current_branch = outcome
-                self.sync_branch_ui(current_branch)
-                self.set_status(f"Branch criada com sucesso: {current_branch}")
-                messagebox.showinfo("Nova branch", result or f"Branch '{current_branch}' criada com sucesso.")
+            def created(result):
+                self.sync_branch_ui(
+                    on_applied=lambda current: self.set_status(f"Branch criada com sucesso: {current}")
+                )
+                messagebox.showinfo("Nova branch", result or "Branch criada com sucesso.")
 
             self._run_in_background(
-                create,
+                lambda: create_branch(repo_path, branch_name),
                 created,
                 busy_message="Criando branch...",
                 error_title="Erro Git",

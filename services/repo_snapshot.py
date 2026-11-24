@@ -43,14 +43,17 @@ def collect_repo_snapshot(
         overview_future = pool.submit(get_branch_overview, repo_path)
         files_future = pool.submit(get_changed_files_grouped, repo_path)
         stashes_future = pool.submit(list_stashes, repo_path)
+        # Sem branch informada, o log de HEAD (= branch atual) já sai junto, em vez de
+        # esperar o for-each-ref descobrir o nome: economiza um processo git em série.
+        commits_future = pool.submit(
+            get_recent_commit_rows, repo_path, branch_name or "HEAD", commit_limit
+        )
 
         local, remote, remotes, current = overview_future.result()
 
         if branch_name is None:
             # HEAD destacado ou repositório sem commits: o for-each-ref não informa a atual.
             branch_name = current if current else get_current_branch(repo_path)
-
-        commits_future = pool.submit(get_recent_commit_rows, repo_path, branch_name, commit_limit)
 
         if not remotes:
             # Nenhum remote com refs buscados: confirma na configuração (remote recém-adicionado).

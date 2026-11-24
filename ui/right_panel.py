@@ -2,6 +2,17 @@ import customtkinter as ctk
 from ui.theme import APP_COLORS
 
 
+_FONTS: dict = {}
+
+
+def _font(size: int, weight: str = "normal") -> ctk.CTkFont:
+    """Fonte compartilhada: criar um CTkFont por linha custa caro no Windows."""
+    key = (size, weight)
+    if key not in _FONTS:
+        _FONTS[key] = ctk.CTkFont(size=size, weight=weight)
+    return _FONTS[key]
+
+
 class FileSection(ctk.CTkFrame):
     def __init__(self, master, title: str, kind: str, unchecked: set[str], on_toggle=None, on_action=None):
         super().__init__(master, fg_color="transparent")
@@ -15,6 +26,8 @@ class FileSection(ctk.CTkFrame):
         self._unchecked = unchecked
         self._on_toggle = on_toggle
         self._vars: dict[str, ctk.BooleanVar] = {}
+        # O que está desenhado agora: evita recriar os widgets num Refresh sem mudanças.
+        self._rendered = None
 
         self.title_label = ctk.CTkLabel(
             self,
@@ -34,6 +47,7 @@ class FileSection(ctk.CTkFrame):
 
     def clear(self):
         self._vars = {}
+        self._rendered = None
         for widget in self.container.winfo_children():
             widget.destroy()
 
@@ -54,22 +68,32 @@ class FileSection(ctk.CTkFrame):
             self._on_toggle()
 
     def set_message(self, text: str):
+        if self._rendered == ("message", text):
+            return
         self.clear()
+        self._rendered = ("message", text)
         label = ctk.CTkLabel(
             self.container,
             text=text,
             text_color=APP_COLORS["muted"],
             anchor="w",
-            font=ctk.CTkFont(size=11)
+            font=_font(11)
         )
         label.pack(fill="x", padx=6, pady=(0, 6))
 
     def set_files(self, files: list[str]):
-        self.clear()
-
         if not files:
             self.set_message("Nenhum arquivo")
             return
+
+        key = ("files", tuple(files))
+        if self._rendered == key:
+            # Mesmos arquivos: só acerta as marcações (os desmarcados podem ter mudado).
+            self.sync_checks()
+            return
+
+        self.clear()
+        self._rendered = key
 
         for file_text in files:
             status, path = self._split(file_text)
@@ -108,7 +132,7 @@ class FileSection(ctk.CTkFrame):
                 text_color=APP_COLORS["text"],
                 anchor="w",
                 cursor="hand2",
-                font=ctk.CTkFont(size=11)
+                font=_font(11)
             )
             label.pack(side="left", fill="x", expand=True, padx=(2, 4), pady=6)
             label.bind("<Button-1>", lambda _e, p=path, st=status: self._emit("diff", p, st))
@@ -127,7 +151,7 @@ class FileSection(ctk.CTkFrame):
             fg_color="transparent",
             hover_color="#7f1d1d" if danger else APP_COLORS["hover"],
             text_color=APP_COLORS["danger"] if danger else APP_COLORS["text"],
-            font=ctk.CTkFont(size=13, weight="bold"),
+            font=_font(13, "bold"),
             command=lambda: self._emit(action, path, status),
         )
         button.pack(side="right", padx=(0, 4), pady=4)
@@ -139,6 +163,8 @@ class StashSection(ctk.CTkFrame):
     def __init__(self, master, on_action=None):
         super().__init__(master, fg_color="transparent")
         self._on_action = on_action
+        # O que está desenhado agora: evita recriar os widgets num Refresh sem mudanças.
+        self._rendered = None
 
         self.title_label = ctk.CTkLabel(
             self,
@@ -152,25 +178,34 @@ class StashSection(ctk.CTkFrame):
         self.container.pack(fill="x", expand=False)
 
     def clear(self):
+        self._rendered = None
         for widget in self.container.winfo_children():
             widget.destroy()
 
     def set_message(self, text: str):
+        if self._rendered == ("message", text):
+            return
         self.clear()
+        self._rendered = ("message", text)
         ctk.CTkLabel(
             self.container,
             text=text,
             text_color=APP_COLORS["muted"],
             anchor="w",
-            font=ctk.CTkFont(size=11)
+            font=_font(11)
         ).pack(fill="x", padx=6, pady=(0, 6))
 
     def set_stashes(self, stashes: list[dict]):
-        self.clear()
-
         if not stashes:
             self.set_message("Nenhum stash")
             return
+
+        key = ("stashes", tuple(tuple(sorted(stash.items())) for stash in stashes))
+        if self._rendered == key:
+            return
+
+        self.clear()
+        self._rendered = key
 
         for stash in stashes:
             ref = stash["ref"]
@@ -186,7 +221,7 @@ class StashSection(ctk.CTkFrame):
                 justify="left",
                 wraplength=200,
                 cursor="hand2",
-                font=ctk.CTkFont(size=11)
+                font=_font(11)
             )
             label.pack(fill="x", padx=8, pady=(6, 2))
             label.bind("<Button-1>", lambda _e, r=ref: self._emit("diff", r))
@@ -211,7 +246,7 @@ class StashSection(ctk.CTkFrame):
             fg_color="#334155" if not danger else "transparent",
             hover_color="#475569" if not danger else "#7f1d1d",
             text_color=APP_COLORS["danger"] if danger else "#ffffff",
-            font=ctk.CTkFont(size=11),
+            font=_font(11),
             command=lambda: self._emit(action, ref),
         ).pack(side="left", padx=(0, 4))
 
