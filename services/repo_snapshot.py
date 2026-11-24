@@ -4,7 +4,7 @@ from typing import Any, Dict, List
 
 from services.branch_service import (
     get_current_branch,
-    get_local_and_remote_branches,
+    get_branch_overview,
     get_remotes,
 )
 from services.commit_service import get_changed_files_grouped, get_recent_commit_rows
@@ -34,24 +34,27 @@ def collect_repo_snapshot(
 ) -> RepoSnapshot:
     """Coleta tudo o que a UI precisa para redesenhar, com os comandos git em paralelo.
 
-    Cada comando é um processo à parte (caro no Windows); rodando juntos o tempo total
-    passa a ser o do mais lento. Pode ser chamada fora da thread da UI.
+    Cada comando é um processo à parte (caro no Windows), então são poucos (4) e rodam
+    juntos: o tempo total passa a ser o do mais lento. Pode ser chamada fora da thread da UI.
     Erros de branches/remotes propagam; erros de commits/arquivos viram texto no snapshot.
     """
-    with timed("collect_repo_snapshot (total, comandos em paralelo)"), ThreadPoolExecutor(max_workers=5) as pool:
-        branch_future = pool.submit(get_current_branch, repo_path) if branch_name is None else None
-        branches_future = pool.submit(get_local_and_remote_branches, repo_path)
-        remotes_future = pool.submit(get_remotes, repo_path)
+    with timed("collect_repo_snapshot (total, comandos em paralelo)"), ThreadPoolExecutor(max_workers=4) as pool:
+        # Branches, remotes e branch atual vêm de um único `git for-each-ref`.
+        overview_future = pool.submit(get_branch_overview, repo_path)
         files_future = pool.submit(get_changed_files_grouped, repo_path)
         stashes_future = pool.submit(list_stashes, repo_path)
 
-        if branch_future is not None:
-            branch_name = branch_future.result()
+        local, remote, remotes, current = overview_future.result()
+
+        if branch_name is None:
+            # HEAD destacado ou repositório sem commits: o for-each-ref não informa a atual.
+            branch_name = current if current else get_current_branch(repo_path)
 
         commits_future = pool.submit(get_recent_commit_rows, repo_path, branch_name, commit_limit)
 
-        local, remote = branches_future.result()
-        remotes = remotes_future.result()
+        if not remotes:
+            # Nenhum remote com refs buscados: confirma na configuração (remote recém-adicionado).
+            remotes = get_remotes(repo_path)
 
         snapshot = RepoSnapshot(
             branch=branch_name,

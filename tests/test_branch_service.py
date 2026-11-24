@@ -100,3 +100,54 @@ def test_get_local_and_remote_branches_equivale_as_funcoes_separadas(git_repo):
 
     assert local == get_local_branches(git_repo)
     assert remote == get_remote_branches(git_repo) == ["origin/feature/x", "origin/main"]
+
+
+def _git(repo, *args):
+    import subprocess
+
+    subprocess.run(["git", "-C", repo, *args], check=True, capture_output=True, text=True)
+
+
+def test_branch_overview_traz_atual_locais_remotas_e_remotes(git_repo):
+    from services.branch_service import get_branch_overview
+
+    _git(git_repo, "branch", "feature/x")
+    _git(git_repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+    _git(git_repo, "update-ref", "refs/remotes/origin/feature/x", "HEAD")
+    _git(git_repo, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+    _git(git_repo, "update-ref", "refs/remotes/upstream/main", "HEAD")
+
+    local, remote, remotes, current = get_branch_overview(git_repo)
+
+    assert local == ["feature/x", "main"]
+    assert remote == ["origin/feature/x", "origin/main", "upstream/main"]  # sem origin/HEAD
+    assert remotes == ["origin", "upstream"]  # origin/HEAD também conta como remote
+    assert current == "main"
+
+
+def test_branch_overview_marca_a_branch_atual_certa(git_repo):
+    from services.branch_service import get_branch_overview
+
+    _git(git_repo, "checkout", "-b", "feature/y")
+
+    assert get_branch_overview(git_repo)[3] == "feature/y"
+
+
+def test_branch_overview_head_destacado_nao_informa_atual(git_repo):
+    from services.branch_service import get_branch_overview
+
+    _git(git_repo, "checkout", "--detach")
+
+    local, _remote, _remotes, current = get_branch_overview(git_repo)
+
+    assert local == ["main"]
+    assert current is None
+
+
+def test_branch_overview_sem_remote_buscado_volta_vazio(git_repo):
+    from services.branch_service import get_branch_overview
+
+    _git(git_repo, "remote", "add", "origin", "https://github.com/o/r.git")
+
+    # Remote só na configuração (sem refs buscados): o snapshot confirma com `git remote`.
+    assert get_branch_overview(git_repo)[2] == []

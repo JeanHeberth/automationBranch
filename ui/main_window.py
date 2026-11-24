@@ -599,6 +599,9 @@ class MainWindow(ctk.CTk):
 
         threading.Thread(target=runner, daemon=True).start()
 
+        # Os PRs não dependem do snapshot: busca em paralelo em vez de esperar a tela montar.
+        self.load_pull_requests()
+
     def _apply_snapshot(self, snapshot):
         branch_name = snapshot.branch
 
@@ -643,8 +646,6 @@ class MainWindow(ctk.CTk):
                     self.right_panel.set_stashes_error(snapshot.stashes_error)
                 else:
                     self.right_panel.set_stashes(snapshot.stashes)
-
-            self.load_pull_requests()
 
     def perform_branch_checkout(self, branch_name: str):
         if not self.selected_repo_path:
@@ -1354,8 +1355,9 @@ class MainWindow(ctk.CTk):
             keys = [(repo_path, pr.get("number")) for pr in current_prs] if repo_path else []
             keys += [key for key in watch_keys if key not in keys]
 
-            with ThreadPoolExecutor(max_workers=4) as pool:
-                results = dict(zip(keys, pool.map(fetch, keys)))
+            with perf.timed(f"API GitHub: status de {len(keys)} PRs (total, polling={from_poll})"):
+                with ThreadPoolExecutor(max_workers=4) as pool:
+                    results = dict(zip(keys, pool.map(fetch, keys)))
 
             return current_prs, fresh_list, results
 
@@ -1617,7 +1619,22 @@ class MainWindow(ctk.CTk):
         if not folder:
             return
 
-        if not is_git_repository(folder):
+        self.set_status("Verificando repositório...")
+
+        # Roda numa thread própria (e não em _run_in_background) para não ser barrado
+        # por outra operação em andamento: escolher um repositório sempre deve funcionar.
+        def runner():
+            is_repo = is_git_repository(folder)
+            self._safe_after(lambda: self._finish_select_repository(folder, is_repo))
+
+        threading.Thread(target=runner, daemon=True).start()
+
+    def _finish_select_repository(self, folder: str, is_repo: bool):
+        if not self.winfo_exists():
+            return
+
+        if not is_repo:
+            self.set_status("Pasta selecionada não é um repositório Git.")
             messagebox.showwarning(
                 "Repositório inválido",
                 "A pasta selecionada não parece ser um repositório Git válido."
