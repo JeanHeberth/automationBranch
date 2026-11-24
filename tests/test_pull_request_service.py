@@ -400,3 +400,57 @@ def test_merge_pull_request_sucesso_invalida_cache_de_status(api):
 
     assert result["merged"] is True
     assert pull_request_service._STATUS_CACHE == {}
+
+
+def test_get_repo_info_cacheia_a_url_do_origin(monkeypatch):
+    pull_request_service.invalidate_repo_info_cache()
+    chamadas = {"n": 0}
+
+    def fake_origin(repo_path):
+        chamadas["n"] += 1
+        return "https://github.com/owner/repo.git"
+
+    monkeypatch.setattr(pull_request_service, "get_origin_remote_url", fake_origin)
+
+    assert pull_request_service._get_repo_info("/repo") == ("owner", "repo")
+    assert pull_request_service._get_repo_info("/repo") == ("owner", "repo")
+    assert chamadas["n"] == 1  # um único `git remote get-url`
+
+    pull_request_service.invalidate_repo_info_cache("/repo")
+    pull_request_service._get_repo_info("/repo")
+    assert chamadas["n"] == 2
+
+    pull_request_service.invalidate_repo_info_cache()
+
+
+def test_get_repo_info_expira_apos_ttl(monkeypatch):
+    pull_request_service.invalidate_repo_info_cache()
+    chamadas = {"n": 0}
+    monkeypatch.setattr(
+        pull_request_service,
+        "get_origin_remote_url",
+        lambda r: chamadas.__setitem__("n", chamadas["n"] + 1) or "git@github.com:o/r.git",
+    )
+
+    agora = {"t": 1000.0}
+    monkeypatch.setattr(pull_request_service.time, "monotonic", lambda: agora["t"])
+
+    pull_request_service._get_repo_info("/repo")
+    agora["t"] += pull_request_service._REPO_INFO_TTL + 1
+    pull_request_service._get_repo_info("/repo")
+
+    assert chamadas["n"] == 2
+    pull_request_service.invalidate_repo_info_cache()
+
+
+def test_get_repo_info_nao_cacheia_falha(monkeypatch):
+    pull_request_service.invalidate_repo_info_cache()
+    urls = iter(["", "https://github.com/o/r.git"])
+    monkeypatch.setattr(pull_request_service, "get_origin_remote_url", lambda r: next(urls))
+
+    with pytest.raises(GitServiceError):
+        pull_request_service._get_repo_info("/repo")
+
+    # Depois de configurar o origin, a próxima chamada já enxerga.
+    assert pull_request_service._get_repo_info("/repo") == ("o", "r")
+    pull_request_service.invalidate_repo_info_cache()
