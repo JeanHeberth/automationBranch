@@ -10,8 +10,11 @@ jobs:
   test:
     runs-on: ubuntu-latest
     strategy:
+      # Sem fail-fast, uma versão que falha não cancela as demais (e o log mostra todas).
+      fail-fast: false
       matrix:
-        python-version: [ '3.10', '3.11', '3.12', '3.13' ]
+        # 3.10 fora: dependências fixadas no requirements.txt (ex.: more-itertools 11.x) exigem Python >= 3.11.
+        python-version: [ '3.11', '3.12', '3.13' ]
 
     steps:
     - uses: actions/checkout@v4

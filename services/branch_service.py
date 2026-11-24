@@ -35,27 +35,55 @@ def get_remote_branches(repo_path: str) -> List[str]:
     return branches
 
 
-def get_local_and_remote_branches(repo_path: str) -> tuple[List[str], List[str]]:
-    """Local e remotas num único processo git (equivale a get_local_branches + get_remote_branches)."""
+def get_branch_overview(repo_path: str) -> tuple[List[str], List[str], List[str], str | None]:
+    """Locais, remotas, nomes dos remotes e branch atual, tudo num único processo git.
+
+    Cada processo git custa caro no Windows; o `for-each-ref` já traz o que
+    `get_local_and_remote_branches`, `get_remotes` e `get_current_branch` buscariam
+    em três processos à parte. Retorna (locais, remotas, remotes, atual):
+      - `atual` é None em HEAD destacado ou repositório sem commits (use `get_current_branch`);
+      - `remotes` vem dos refs buscados, então fica vazio se nenhum remote foi buscado ainda
+        (use `get_remotes` nesse caso).
+    """
+    # strip=False: a primeira linha começa com o marcador de %(HEAD) (" " ou "*"), que não pode ser cortado.
     output = run_git_command(
         repo_path,
-        ["for-each-ref", "--format=%(refname)", "refs/heads", "refs/remotes"],
+        ["for-each-ref", "--format=%(HEAD)%(refname)", "refs/heads", "refs/remotes"],
+        strip=False,
     )
 
     local: List[str] = []
     remote: List[str] = []
+    remotes: set[str] = set()
+    current: str | None = None
 
     for line in output.splitlines():
-        ref = line.strip()
+        if not line.strip():
+            continue
+
+        is_head = line.startswith("*")
+        ref = line[1:].strip()
+
         if ref.startswith("refs/heads/"):
-            local.append(ref[len("refs/heads/"):])
+            name = ref[len("refs/heads/"):]
+            local.append(name)
+            if is_head:
+                current = name
         elif ref.startswith("refs/remotes/"):
             name = ref[len("refs/remotes/"):]
+            if "/" in name:
+                remotes.add(name.split("/", 1)[0])
             # Ignora o ponteiro simbólico origin/HEAD (mesmo critério de get_remote_branches).
             if "/" not in name or name.endswith("/HEAD"):
                 continue
             remote.append(name)
 
+    return local, remote, sorted(remotes), current
+
+
+def get_local_and_remote_branches(repo_path: str) -> tuple[List[str], List[str]]:
+    """Local e remotas num único processo git (equivale a get_local_branches + get_remote_branches)."""
+    local, remote, _remotes, _current = get_branch_overview(repo_path)
     return local, remote
 
 
