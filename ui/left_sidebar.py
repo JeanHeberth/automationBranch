@@ -156,7 +156,8 @@ else:
 
 
 class LeftSidebar(ctk.CTkFrame):
-    def __init__(self, master, on_branch_select=None, on_open_pr=None, on_merge_pr=None):
+    def __init__(self, master, on_branch_select=None, on_open_pr=None, on_merge_pr=None,
+                 on_remote_branch_checkout=None):
         super().__init__(
             master,
             fg_color=APP_COLORS["sidebar"],
@@ -167,6 +168,7 @@ class LeftSidebar(ctk.CTkFrame):
         self.pack_propagate(False)
 
         self.on_branch_select = on_branch_select
+        self.on_remote_branch_checkout = on_remote_branch_checkout
         self.on_open_pr = on_open_pr
         self.on_merge_pr = on_merge_pr
 
@@ -420,7 +422,7 @@ class LeftSidebar(ctk.CTkFrame):
 
             # Uma branch remota é só texto: um tk.Label leve no lugar de 4 widgets do CustomTkinter.
             for branch_name in related:
-                tk.Label(
+                label = tk.Label(
                     parent,
                     text=f"⑂  {branch_name}",
                     anchor="w",
@@ -429,7 +431,34 @@ class LeftSidebar(ctk.CTkFrame):
                     font=self.fonts["item"],
                     padx=28,
                     pady=5,
-                ).pack(fill="x")
+                )
+                label.pack(fill="x")
+                # Duplo clique ou menu de contexto fazem o checkout ("origin/feature/x").
+                self._bind_remote_branch(label, f"{remote_name}/{branch_name}")
+
+    def _bind_remote_branch(self, widget, remote_ref: str):
+        widget.bind("<Double-Button-1>", lambda _e: self._checkout_remote(remote_ref))
+        # Botão direito: Button-3 no Windows/Linux; Button-2 e Ctrl+clique no macOS.
+        for sequence in ("<Button-3>", "<Button-2>", "<Control-Button-1>"):
+            widget.bind(sequence, lambda e, ref=remote_ref: self._show_remote_menu(e, ref))
+
+    def _checkout_remote(self, remote_ref: str):
+        if self.on_remote_branch_checkout:
+            self.on_remote_branch_checkout(remote_ref)
+
+    def _show_remote_menu(self, event, remote_ref: str):
+        menu = tk.Menu(
+            self, tearoff=0,
+            bg="#111827", fg=APP_COLORS["text"],
+            activebackground="#1f2937", activeforeground=APP_COLORS["text"],
+            bd=0, font=("TkDefaultFont", 11),
+        )
+        menu.add_command(label=f"Checkout de {remote_ref}", command=lambda: self._checkout_remote(remote_ref))
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+        return "break"
 
     def _pr_signature(self):
         numbers = {pr.get("number") for pr in self.pull_requests}
