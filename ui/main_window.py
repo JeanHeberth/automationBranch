@@ -52,6 +52,7 @@ from services.commit_service import (
     is_last_commit_pushed,
 )
 from services.branch_delete_service import is_protected
+from services.protected_branches_service import set_active_repo
 from services.stash_service import (
     stash_changes,
     apply_stash,
@@ -1692,6 +1693,7 @@ class MainWindow(ctk.CTk):
         repo_name = os.path.basename(folder)
         self.repositories[repo_name] = folder
         self.selected_repo_path = folder
+        set_active_repo(folder)  # is_protected passa a usar as branches protegidas deste repositório
 
         repo_names = list(self.repositories.keys())
         self.top_bar.set_repositories(repo_names, repo_name)
