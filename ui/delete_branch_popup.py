@@ -88,13 +88,14 @@ class DeleteBranchPopup(ctk.CTkToplevel):
             command=self._refresh_mode_state
         ).pack(anchor="w", pady=(6, 2))
 
-        ctk.CTkRadioButton(
+        self.all_radio = ctk.CTkRadioButton(
             mode_frame,
             text="Todas, exceto protegidas",
             variable=self.mode_var,
             value="all",
             command=self._refresh_mode_state
-        ).pack(anchor="w")
+        )
+        self.all_radio.pack(anchor="w")
 
         location_frame = ctk.CTkFrame(options_row, fg_color="transparent")
         location_frame.grid(row=0, column=1, sticky="nw")
@@ -111,7 +112,7 @@ class DeleteBranchPopup(ctk.CTkToplevel):
             text="Local",
             variable=self.location_var,
             value="local",
-            command=self._refresh_branch_options
+            command=self._on_location_change
         ).pack(anchor="w", pady=(6, 2))
 
         ctk.CTkRadioButton(
@@ -119,8 +120,17 @@ class DeleteBranchPopup(ctk.CTkToplevel):
             text="Remota",
             variable=self.location_var,
             value="remote",
-            command=self._refresh_branch_options
+            command=self._on_location_change
         ).pack(anchor="w")
+
+        self.remote_hint = ctk.CTkLabel(
+            location_frame,
+            text="Remota: só branch específica, com confirmação.",
+            text_color=APP_COLORS["muted"],
+            font=ctk.CTkFont(size=11),
+            justify="left"
+        )
+        self.remote_hint.pack(anchor="w", pady=(2, 0))
 
         branch_frame = ctk.CTkFrame(container, fg_color="transparent")
         branch_frame.pack(fill="both", expand=True, pady=(0, 12))
@@ -269,6 +279,15 @@ class DeleteBranchPopup(ctk.CTkToplevel):
         self.branch_var.set(branch_name)
         self.selected_label.configure(text=f"Selecionada: {branch_name}", text_color=APP_COLORS["text"])
         self._render_branch_list()
+
+    def _on_location_change(self):
+        # Em massa na remota apagaria branches de colegas e PRs abertos: só vale para a local.
+        if self.location_var.get() == "remote":
+            self.mode_var.set("specific")
+            self.all_radio.configure(state="disabled")
+        else:
+            self.all_radio.configure(state="normal")
+        self._refresh_mode_state()
 
     def _refresh_mode_state(self):
         is_all = self.mode_var.get() == "all"
