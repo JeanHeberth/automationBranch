@@ -227,7 +227,7 @@ def test_branch_overview_with_tracking_traz_ahead_e_behind(repo_com_remoto, tmp_
     run_git_command(repo_com_remoto, ["commit", "-m", "local"])
 
     outro = str(tmp_path / "outro")
-    run_git_command(str(tmp_path), ["clone", str(tmp_path / "origin.git"), outro])
+    run_git_command(str(tmp_path), ["clone", "--branch", "main", str(tmp_path / "origin.git"), outro])
     run_git_command(outro, ["config", "user.email", "o@example.com"])
     run_git_command(outro, ["config", "user.name", "Outro"])
     (tmp_path / "outro" / "remoto.txt").write_text("r", encoding="utf-8")
