@@ -553,3 +553,38 @@ def test_redo_recusa_branch_protegida(repo):
 
     with pytest.raises(GitServiceError, match="protegida"):
         ga.redo_last_undo(repo)
+
+
+def test_auto_fetch_detecta_mudanca_no_remoto(repo, tmp_path):
+    remote = str(tmp_path / "remote.git")
+    subprocess.run(["git", "init", "--bare", "-q", remote], check=True)
+    _git(repo, "remote", "add", "origin", remote)
+    _git(repo, "push", "-q", "origin", "feature/x", "main")
+    _git(repo, "fetch", "-q", "origin")
+
+    assert ga.auto_fetch(repo) is False  # nada novo
+
+    other = str(tmp_path / "other")
+    subprocess.run(["git", "clone", "-q", remote, other], check=True)
+    _git(other, "config", "user.email", "o@o.com")
+    _git(other, "config", "user.name", "O")
+    _git(other, "checkout", "-q", "-b", "feature/nova")
+    _commit(other, "n.txt", "n\n", "nova")
+    _git(other, "push", "-q", "origin", "feature/nova")
+
+    assert ga.auto_fetch(repo) is True
+    assert "origin/feature/nova" in _git(repo, "branch", "-r")
+
+
+def test_auto_fetch_nao_pede_credenciais(monkeypatch):
+    capturado = {}
+
+    def falso(repo_path, args, **kwargs):
+        capturado.update(kwargs)
+        return ""
+
+    monkeypatch.setattr(ga, "run_git_command", falso)
+
+    ga.auto_fetch("/repo")
+
+    assert capturado["env"] == {"GIT_TERMINAL_PROMPT": "0"}

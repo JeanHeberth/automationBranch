@@ -35,6 +35,19 @@ def get_remote_branches(repo_path: str) -> List[str]:
     return branches
 
 
+def _parse_track(track: str) -> tuple[int, int]:
+    """Lê o `%(upstream:track,nobracket)` ("ahead 2, behind 1", "gone", "") como (ahead, behind)."""
+    ahead = behind = 0
+    for part in track.split(","):
+        words = part.split()
+        if len(words) == 2 and words[1].isdigit():
+            if words[0] == "ahead":
+                ahead = int(words[1])
+            elif words[0] == "behind":
+                behind = int(words[1])
+    return ahead, behind
+
+
 def get_branch_overview(repo_path: str) -> tuple[List[str], List[str], List[str], str | None]:
     """Locais, remotas, nomes dos remotes e branch atual, tudo num único processo git.
 
@@ -45,13 +58,27 @@ def get_branch_overview(repo_path: str) -> tuple[List[str], List[str], List[str]
       - `remotes` vem dos refs buscados, então fica vazio se nenhum remote foi buscado ainda
         (use `get_remotes` nesse caso).
     """
+    local, remote, remotes, current, _tracking = get_branch_overview_with_tracking(repo_path)
+    return local, remote, remotes, current
+
+
+def get_branch_overview_with_tracking(
+    repo_path: str,
+) -> tuple[List[str], List[str], List[str], str | None, dict[str, tuple[int, int]]]:
+    """Como `get_branch_overview`, mais o quanto cada local está à frente/atrás do upstream.
+
+    O 5º item mapeia branch local -> (ahead, behind) só para quem difere do upstream; branch
+    sem upstream (ou em dia) não aparece. Vem do mesmo `for-each-ref`, sem processo extra. O
+    número é relativo ao que foi buscado por último: sem fetch ele pode estar defasado.
+    """
     # strip=False: a primeira linha começa com o marcador de %(HEAD) (" " ou "*"), que não pode ser cortado.
     output = run_git_command(
         repo_path,
-        ["for-each-ref", "--format=%(HEAD)%(refname)", "refs/heads", "refs/remotes"],
+        ["for-each-ref", "--format=%(HEAD)%(refname)%09%(upstream:track,nobracket)", "refs/heads", "refs/remotes"],
         strip=False,
     )
 
+    tracking: dict[str, tuple[int, int]] = {}
     local: List[str] = []
     remote: List[str] = []
     remotes: set[str] = set()
@@ -62,13 +89,17 @@ def get_branch_overview(repo_path: str) -> tuple[List[str], List[str], List[str]
             continue
 
         is_head = line.startswith("*")
-        ref = line[1:].strip()
+        ref, _sep, track = line[1:].partition("\t")
+        ref = ref.strip()
 
         if ref.startswith("refs/heads/"):
             name = ref[len("refs/heads/"):]
             local.append(name)
             if is_head:
                 current = name
+            ahead_behind = _parse_track(track)
+            if ahead_behind != (0, 0):
+                tracking[name] = ahead_behind
         elif ref.startswith("refs/remotes/"):
             name = ref[len("refs/remotes/"):]
             if "/" in name:
@@ -78,7 +109,7 @@ def get_branch_overview(repo_path: str) -> tuple[List[str], List[str], List[str]
                 continue
             remote.append(name)
 
-    return local, remote, sorted(remotes), current
+    return local, remote, sorted(remotes), current, tracking
 
 
 def get_local_and_remote_branches(repo_path: str) -> tuple[List[str], List[str]]:

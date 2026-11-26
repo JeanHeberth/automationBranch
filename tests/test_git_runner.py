@@ -59,3 +59,35 @@ def test_run_git_command_passa_creationflags(monkeypatch):
     run_git_command("/x", ["status"])
 
     assert capturado["creationflags"] == git_runner._CREATIONFLAGS
+
+
+def test_run_git_command_env_extra_mescla_com_o_ambiente(monkeypatch):
+    capturado = {}
+
+    class Resultado:
+        stdout = "ok"
+
+    def falso(cmd, **kwargs):
+        capturado.update(kwargs)
+        return Resultado()
+
+    monkeypatch.setattr(git_runner.subprocess, "run", falso)
+    monkeypatch.setenv("VARIAVEL_EXISTENTE", "1")
+
+    run_git_command("/repo", ["status"], env={"GIT_TERMINAL_PROMPT": "0"})
+
+    assert capturado["env"]["GIT_TERMINAL_PROMPT"] == "0"
+    assert capturado["env"]["VARIAVEL_EXISTENTE"] == "1"
+
+
+def test_run_git_command_sem_env_herda_o_ambiente(monkeypatch):
+    capturado = {}
+
+    class Resultado:
+        stdout = "ok"
+
+    monkeypatch.setattr(git_runner.subprocess, "run", lambda cmd, **kw: capturado.update(kw) or Resultado())
+
+    run_git_command("/repo", ["status"])
+
+    assert capturado["env"] is None
