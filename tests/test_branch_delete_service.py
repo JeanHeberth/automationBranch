@@ -83,3 +83,13 @@ def test_get_pr_base_branch_sem_develop_no_remote_nao_cai_na_main(monkeypatch):
 
     with pytest.raises(ValueError, match="develop"):
         branch_delete_service.get_pr_base_branch("/repo", "feature/x")
+
+
+def test_get_deletable_remote_branches_ignora_outros_remotes_e_protegidas(monkeypatch):
+    monkeypatch.setattr(
+        branch_delete_service,
+        "get_remote_branches",
+        lambda repo: ["origin/main", "origin/feature/x", "upstream/feature/y", "origin/develop"],
+    )
+
+    assert get_deletable_remote_branches("/repo") == ["feature/x"]

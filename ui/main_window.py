@@ -406,6 +406,28 @@ class MainWindow(ctk.CTk):
             )
             return False
 
+        if location == "remote":
+            # Em massa na remota apagaria branches de colegas e fecharia PRs abertos: só específica.
+            if mode != "specific":
+                messagebox.showwarning(
+                    "Deleção em massa remota desativada",
+                    "Na remota só é possível deletar uma branch específica."
+                )
+                return False
+
+            if not branch_name or branch_name == "Nenhuma branch disponível":
+                messagebox.showwarning("Selecione uma branch", "Selecione uma branch válida.")
+                return False
+
+            if not messagebox.askyesno(
+                "Deletar branch remota",
+                f"Deletar '{branch_name}' do remote origin?\n\n"
+                "Ela some para toda a equipe e um PR aberto a partir dela é fechado.\n"
+                "Não dá para desfazer pelo app."
+            ):
+                self.set_status("Deleção da branch remota cancelada.")
+                return False
+
         repo_path = self.selected_repo_path
 
         def work():
