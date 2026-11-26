@@ -92,6 +92,29 @@ def fetch_all(repo_path: str) -> str:
     return "Fetch concluído."
 
 
+AUTO_FETCH_TIMEOUT = 60
+
+
+def _remote_refs_signature(repo_path: str) -> str:
+    return run_git_command(repo_path, ["for-each-ref", "--format=%(objectname) %(refname)", "refs/remotes"])
+
+
+def auto_fetch(repo_path: str) -> bool:
+    """Fetch silencioso em segundo plano; devolve True se as branches remotas mudaram.
+
+    Nunca pede credenciais (GIT_TERMINAL_PROMPT=0): sem acesso o git falha na hora em vez
+    de ficar esperando, e quem chama ignora o erro (sem rede, sem permissão...).
+    """
+    before = _remote_refs_signature(repo_path)
+    run_git_command(
+        repo_path,
+        ["fetch", "--all", "--prune"],
+        timeout=AUTO_FETCH_TIMEOUT,
+        env={"GIT_TERMINAL_PROMPT": "0"},
+    )
+    return _remote_refs_signature(repo_path) != before
+
+
 def merge_branch(repo_path: str, branch: str) -> str:
     branch = branch.strip()
     if not branch:
