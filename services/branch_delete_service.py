@@ -76,8 +76,10 @@ def get_deletable_remote_branches(repo_path: str) -> list[str]:
         if "->" in branch:
             continue
 
-        if branch.startswith("origin/"):
-            branch = branch.replace("origin/", "", 1)
+        # A deleção sempre empurra para o origin: branches de outros remotes ficam de fora.
+        if not branch.startswith("origin/"):
+            continue
+        branch = branch[len("origin/"):]
 
         if is_protected(branch):
             continue
