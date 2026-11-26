@@ -89,11 +89,16 @@ def get_protected_patterns(repo_path: str | None = None) -> list[str]:
     return _clean([*DEFAULT_PROTECTED, *get_extra_patterns(repo_path)])
 
 
-def is_protected(branch_name: str, repo_path: str | None = None) -> bool:
+def matches_any(branch_name: str, patterns) -> bool:
+    """True se o nome (sem maiúsculas/minúsculas) bate com algum nome ou padrão com `*`."""
     name = (branch_name or "").strip().lower()
     if not name:
         return False
-    return any(fnmatch.fnmatchcase(name, pattern.lower()) for pattern in get_protected_patterns(repo_path))
+    return any(fnmatch.fnmatchcase(name, str(pattern).strip().lower()) for pattern in patterns if str(pattern).strip())
+
+
+def is_protected(branch_name: str, repo_path: str | None = None) -> bool:
+    return matches_any(branch_name, get_protected_patterns(repo_path))
 
 
 def save_extra_patterns(repo_path: str, patterns) -> list[str]:

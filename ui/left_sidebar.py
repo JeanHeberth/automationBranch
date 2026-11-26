@@ -2,6 +2,7 @@ import sys
 import tkinter as tk
 
 import customtkinter as ctk
+from ui.center_panel import HoverTooltip
 from ui.theme import APP_COLORS
 
 
@@ -89,7 +90,9 @@ class SidebarItem(ctk.CTkFrame):
         level: int = 0,
         selected: bool = False,
         command=None,
-        fonts: dict | None = None
+        fonts: dict | None = None,
+        badge: str = "",
+        badge_tooltip: str = "",
     ):
         self.text_value = text
         self.level = level
@@ -118,6 +121,20 @@ class SidebarItem(ctk.CTkFrame):
         )
         self.icon_label.pack(side="left", padx=(pad_left, 6))
 
+        # Empacotado antes do texto para ficar encostado à direita (ex.: "↑2 ↓1").
+        self.badge_label = None
+        if badge:
+            self.badge_label = ctk.CTkLabel(
+                self.inner,
+                text=badge,
+                text_color=APP_COLORS["muted"],
+                font=ctk.CTkFont(size=11),
+                width=10,
+            )
+            self.badge_label.pack(side="right", padx=(4, 10))
+            if badge_tooltip:
+                HoverTooltip(self.badge_label, lambda: badge_tooltip)
+
         self.text_label = ctk.CTkLabel(
             self.inner,
             text=text,
@@ -127,7 +144,10 @@ class SidebarItem(ctk.CTkFrame):
         )
         self.text_label.pack(side="left", fill="x", expand=True)
 
-        for widget in [self, self.inner, self.icon_label, self.text_label]:
+        clickable = [self, self.inner, self.icon_label, self.text_label]
+        if self.badge_label is not None:
+            clickable.append(self.badge_label)
+        for widget in clickable:
             widget.bind("<Button-1>", self._on_click)
 
     def _on_click(self, _event=None):
@@ -177,6 +197,8 @@ class LeftSidebar(ctk.CTkFrame):
         self.all_branches: list[str] = []
         self.remote_branches: list[str] = []
         self.remotes: list[str] = []
+        # branch local -> (ahead, behind) do upstream; só as que divergem.
+        self.branch_tracking: dict[str, tuple[int, int]] = {}
         self.pull_requests: list[dict] = []
         # Estado de merge de cada PR (number -> {"state", "label", "auto_merge"}) e PRs
         # que o app está acompanhando para mergear sozinho quando os checks passarem.
@@ -185,6 +207,7 @@ class LeftSidebar(ctk.CTkFrame):
 
         # O que está desenhado hoje: permite pular redesenhos idênticos (muito caro no Windows).
         self._rendered_local: list[str] | None = None
+        self._rendered_tracking: dict | None = None
         self._rendered_remote: tuple | None = None
         self._rendered_prs: tuple | None = None
         self._remote_expanded = False
@@ -345,6 +368,7 @@ class LeftSidebar(ctk.CTkFrame):
         self._clear_box(self.local_box)
         self.branch_items.clear()
         self._rendered_local = branches[:]
+        self._rendered_tracking = dict(self.branch_tracking)
 
         local = SidebarSection(self.local_box, "LOCAL", str(len(branches)), expanded=True, fonts=self.fonts)
         local.pack(fill="x", padx=0, pady=(3, 8))
@@ -359,6 +383,7 @@ class LeftSidebar(ctk.CTkFrame):
             return
 
         for branch in branches:
+            badge, badge_tip = self._tracking_badge(branch)
             item = SidebarItem(
                 local.content,
                 branch,
@@ -366,7 +391,9 @@ class LeftSidebar(ctk.CTkFrame):
                 level=0,
                 selected=(branch == self.selected_branch),
                 command=self._handle_branch_click,
-                fonts=self.fonts
+                fonts=self.fonts,
+                badge=badge,
+                badge_tooltip=badge_tip,
             )
             item.pack(fill="x")
             self.branch_items[branch] = item
@@ -613,6 +640,18 @@ class LeftSidebar(ctk.CTkFrame):
         self._render_local_section(branches)
         self.set_viewing_count(len(branches))
 
+    def _tracking_badge(self, branch: str) -> tuple[str, str]:
+        """("↑2 ↓1", dica) para uma branch local que diverge do upstream; ("", "") se não diverge."""
+        ahead, behind = self.branch_tracking.get(branch, (0, 0))
+        parts, tips = [], []
+        if ahead:
+            parts.append(f"↑{ahead}")
+            tips.append(f"{ahead} commit(s) a enviar (push)")
+        if behind:
+            parts.append(f"↓{behind}")
+            tips.append(f"{behind} commit(s) a receber (pull)")
+        return " ".join(parts), "; ".join(tips)
+
     def _handle_branch_click(self, branch_name: str):
         self.selected_branch = branch_name
 
@@ -641,7 +680,14 @@ class LeftSidebar(ctk.CTkFrame):
 
         self._render_branches(filtered)
 
-    def set_branches(self, branches: list[str], remote_branches: list[str] | None = None, remotes: list[str] | None = None):
+    def set_branches(
+        self,
+        branches: list[str],
+        remote_branches: list[str] | None = None,
+        remotes: list[str] | None = None,
+        tracking: dict[str, tuple[int, int]] | None = None,
+    ):
+        self.branch_tracking = dict(tracking) if tracking else {}
         self.all_branches = branches[:] if branches else []
         self.remote_branches = remote_branches[:] if remote_branches else []
         self.remotes = remotes[:] if remotes else []
@@ -650,7 +696,7 @@ class LeftSidebar(ctk.CTkFrame):
             self.selected_branch = self.all_branches[0] if self.all_branches else ""
 
         # Só redesenha o que mudou (num Refresh sem novidades nada é recriado).
-        if self._rendered_local != self.all_branches:
+        if self._rendered_local != self.all_branches or self._rendered_tracking != self.branch_tracking:
             self._render_branches(self.all_branches)
         else:
             self.set_selected_branch(self.selected_branch)
