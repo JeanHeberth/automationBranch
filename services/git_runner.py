@@ -1,3 +1,4 @@
+import os
 import subprocess
 import sys
 
@@ -23,6 +24,7 @@ def run_git_command(
     strip: bool = True,
     timeout: float | None = DEFAULT_TIMEOUT,
     ok_returncodes: tuple[int, ...] = (0,),
+    env: dict[str, str] | None = None,
 ) -> str:
     """Roda `git -C repo_path <args>`. `ok_returncodes` lista saídas que não são erro
     (ex.: `git grep` sai com 1 quando não encontra nada)."""
@@ -37,6 +39,7 @@ def run_git_command(
                 errors="replace",
                 check=True,
                 timeout=timeout,
+                env={**os.environ, **env} if env else None,
                 creationflags=_CREATIONFLAGS,
             )
     except FileNotFoundError as exc:
