@@ -40,6 +40,7 @@ from services.branch_delete_service import (
     delete_all_local,
     delete_all_remote,
 )
+from services.git_actions_service import auto_fetch
 from services.commit_service import (
     commit_selected_files,
     get_file_diff,
@@ -97,6 +98,8 @@ ctk.set_default_color_theme("blue")
 class MainWindow(ctk.CTk):
     # Atualização do estado dos checks dos PRs: só roda enquanto há PR pendente ou
     # "merge automático" local ativo, para não gastar o rate limit da API do GitHub.
+    # Fetch silencioso do repositório aberto: mantém remotas e ↑↓ das branches em dia.
+    AUTO_FETCH_INTERVAL_MS = 5 * 60_000
     PR_POLL_INTERVAL_MS = 20_000
     PR_POLL_MAX_IDLE_CYCLES = 45
 
@@ -127,6 +130,8 @@ class MainWindow(ctk.CTk):
         self._pr_watch: dict[tuple, dict] = {}
         self._pr_poll_job = None
         self._pr_poll_cycles = 0
+        self._auto_fetch_job = None
+        self._auto_fetch_running: set[str] = set()  # repositórios com fetch em andamento
 
         self._configure_window_size()
         perf.start_ui_lag_monitor(self)
@@ -641,7 +646,8 @@ class MainWindow(ctk.CTk):
                     self.left_sidebar.set_branches(
                         snapshot.local_branches,
                         remote_branches=snapshot.remote_branches,
-                        remotes=snapshot.remotes
+                        remotes=snapshot.remotes,
+                        tracking=snapshot.tracking,
                     )
                 self.left_sidebar.set_selected_branch(branch_name)
                 self.left_sidebar.set_footer_message(f"Branch atual: {branch_name}")
@@ -1693,9 +1699,62 @@ class MainWindow(ctk.CTk):
         try:
             self.sync_branch_ui()
             self.set_status(f"Repositório selecionado: {repo_name} ({folder})")
+            self._restart_auto_fetch()
 
         except GitServiceError as exc:
             messagebox.showerror("Erro Git", str(exc))
+
+    def _restart_auto_fetch(self):
+        """Busca o remoto agora e passa a repetir a cada AUTO_FETCH_INTERVAL_MS."""
+        if self._auto_fetch_job is not None:
+            try:
+                self.after_cancel(self._auto_fetch_job)
+            except (RuntimeError, TclError):
+                pass
+            self._auto_fetch_job = None
+        self._run_auto_fetch()
+
+    def _run_auto_fetch(self):
+        self._auto_fetch_job = None
+        if not self.winfo_exists() or not self.selected_repo_path:
+            return
+
+        repo_path = self.selected_repo_path
+
+        # Fora do _run_in_background: é silencioso, não mostra "ocupado" nem barra operações do usuário.
+        # Se o usuário está no meio de uma operação Git, pula esta rodada.
+        if not self._bg_busy and repo_path not in self._auto_fetch_running:
+            self._auto_fetch_running.add(repo_path)
+
+            def runner():
+                try:
+                    changed = auto_fetch(repo_path)
+                except Exception:
+                    changed = False  # sem rede/credenciais: tenta de novo na próxima rodada
+                self._safe_after(lambda: self._finish_auto_fetch(repo_path, changed))
+
+            threading.Thread(target=runner, daemon=True).start()
+        else:
+            self._schedule_auto_fetch()
+
+    def _finish_auto_fetch(self, repo_path: str, changed: bool):
+        self._auto_fetch_running.discard(repo_path)
+        if not self.winfo_exists():
+            return
+
+        # Só redesenha se algo mudou, e só se o repositório ainda é o mesmo.
+        if changed and self.selected_repo_path == repo_path:
+            self.sync_branch_ui(on_applied=lambda _b: self.set_status("Fetch automático: remoto atualizado."))
+
+        self._schedule_auto_fetch()
+
+    def _schedule_auto_fetch(self):
+        if self._auto_fetch_job is not None:
+            return
+        try:
+            self._auto_fetch_job = self.after(self.AUTO_FETCH_INTERVAL_MS, self._run_auto_fetch)
+        except (RuntimeError, TclError):
+            self._auto_fetch_job = None
 
     def handle_branch_selected(self, branch_name: str):
         self.perform_branch_checkout(branch_name)

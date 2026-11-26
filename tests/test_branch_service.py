@@ -215,3 +215,53 @@ def test_checkout_remote_branch_com_local_existente_so_troca(repo_com_remoto):
     # Não mexe no tracking de uma local que já existia.
     with pytest.raises(Exception):
         run_git_command(repo_com_remoto, ["rev-parse", "--abbrev-ref", "feature/x@{upstream}"])
+
+
+def test_branch_overview_with_tracking_traz_ahead_e_behind(repo_com_remoto, tmp_path):
+    from services.branch_service import get_branch_overview_with_tracking
+
+    # main acompanha origin/main; ahead = 1 (commit local) e behind = 1 (commit só no remoto).
+    run_git_command(repo_com_remoto, ["branch", "--set-upstream-to=origin/main", "main"])
+    (tmp_path / "repo" / "local.txt").write_text("l", encoding="utf-8")
+    run_git_command(repo_com_remoto, ["add", "-A"])
+    run_git_command(repo_com_remoto, ["commit", "-m", "local"])
+
+    outro = str(tmp_path / "outro")
+    run_git_command(str(tmp_path), ["clone", str(tmp_path / "origin.git"), outro])
+    run_git_command(outro, ["config", "user.email", "o@example.com"])
+    run_git_command(outro, ["config", "user.name", "Outro"])
+    (tmp_path / "outro" / "remoto.txt").write_text("r", encoding="utf-8")
+    run_git_command(outro, ["add", "-A"])
+    run_git_command(outro, ["commit", "-m", "remoto"])
+    run_git_command(outro, ["push", "origin", "main"])
+    run_git_command(repo_com_remoto, ["fetch", "origin"])
+
+    *_, tracking = get_branch_overview_with_tracking(repo_com_remoto)
+
+    assert tracking == {"main": (1, 1)}
+
+
+def test_branch_overview_with_tracking_omite_branch_em_dia_ou_sem_upstream(repo_com_remoto):
+    from services.branch_service import get_branch_overview_with_tracking
+
+    run_git_command(repo_com_remoto, ["branch", "--set-upstream-to=origin/main", "main"])
+    run_git_command(repo_com_remoto, ["branch", "sem-upstream"])
+
+    local, _remote, _remotes, _current, tracking = get_branch_overview_with_tracking(repo_com_remoto)
+
+    assert "sem-upstream" in local
+    assert tracking == {}
+
+
+@pytest.mark.parametrize(
+    "texto, esperado",
+    [
+        ("", (0, 0)),
+        ("gone", (0, 0)),
+        ("ahead 2", (2, 0)),
+        ("behind 3", (0, 3)),
+        ("ahead 2, behind 1", (2, 1)),
+    ],
+)
+def test_parse_track(texto, esperado):
+    assert branch_service._parse_track(texto) == esperado

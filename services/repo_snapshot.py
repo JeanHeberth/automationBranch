@@ -4,7 +4,7 @@ from typing import Any, Dict, List
 
 from services.branch_service import (
     get_current_branch,
-    get_branch_overview,
+    get_branch_overview_with_tracking,
     get_remotes,
 )
 from services.commit_service import get_changed_files_grouped, get_recent_commit_rows
@@ -25,6 +25,8 @@ class RepoSnapshot:
     changed_files_error: str | None = None
     stashes: List[Dict[str, Any]] = field(default_factory=list)
     stashes_error: str | None = None
+    # branch local -> (ahead, behind) em relação ao upstream; só as que divergem.
+    tracking: Dict[str, tuple] = field(default_factory=dict)
 
 
 def collect_repo_snapshot(
@@ -40,7 +42,7 @@ def collect_repo_snapshot(
     """
     with timed("collect_repo_snapshot (total, comandos em paralelo)"), ThreadPoolExecutor(max_workers=4) as pool:
         # Branches, remotes e branch atual vêm de um único `git for-each-ref`.
-        overview_future = pool.submit(get_branch_overview, repo_path)
+        overview_future = pool.submit(get_branch_overview_with_tracking, repo_path)
         files_future = pool.submit(get_changed_files_grouped, repo_path)
         stashes_future = pool.submit(list_stashes, repo_path)
         # Sem branch informada, o log de HEAD (= branch atual) já sai junto, em vez de
@@ -49,7 +51,7 @@ def collect_repo_snapshot(
             get_recent_commit_rows, repo_path, branch_name or "HEAD", commit_limit
         )
 
-        local, remote, remotes, current = overview_future.result()
+        local, remote, remotes, current, tracking = overview_future.result()
 
         if branch_name is None:
             # HEAD destacado ou repositório sem commits: o for-each-ref não informa a atual.
@@ -64,6 +66,7 @@ def collect_repo_snapshot(
             local_branches=local,
             remote_branches=remote,
             remotes=remotes,
+            tracking=tracking,
         )
 
         try:

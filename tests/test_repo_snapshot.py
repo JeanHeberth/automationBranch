@@ -69,7 +69,7 @@ def test_snapshot_erro_de_branches_propaga(git_repo, monkeypatch):
     def falha(*a, **k):
         raise GitServiceError("sem repo")
 
-    monkeypatch.setattr(repo_snapshot, "get_branch_overview", falha)
+    monkeypatch.setattr(repo_snapshot, "get_branch_overview_with_tracking", falha)
 
     import pytest
 
