@@ -1,3 +1,4 @@
+import os
 import time
 import webbrowser
 from tkinter import filedialog, messagebox
@@ -13,7 +14,8 @@ from services.pull_request_service import get_repo_owner_and_name
 from services.sync_service import git_pull
 from ui.actions_panel import ActionsPanel
 from ui.base_branch_popup import BaseBranchPopup
-from ui.dialogs import ask_string, ask_text
+from ui.dialogs import ask_string
+from ui.protected_branches_dialog import ProtectedBranchesDialog
 from ui.reflog_dialog import ReflogDialog
 from ui.search_dialog import SearchDialog
 from ui.tags_dialog import TagsDialog
@@ -550,20 +552,17 @@ class ActionsController:
         if not repo:
             return
 
-        defaults = ", ".join(protected.DEFAULT_PROTECTED)
-        text = ask_text(
+        patterns = ProtectedBranchesDialog(
             self.w,
-            "Branches protegidas",
-            f"Sempre protegidas: {defaults}.\n"
-            "Acrescente outras, uma por linha (aceita * : release/*, hotfix/*, staging).\n"
-            "Apague tudo para voltar só às padrão. Vale apenas para este repositório.",
-            initialvalue="\n".join(protected.get_extra_patterns(repo)),
-        )
-        if text is None:
+            repo_name=os.path.basename(repo),
+            defaults=list(protected.DEFAULT_PROTECTED),
+            extras=protected.get_extra_patterns(repo),
+        ).get_result()
+        if patterns is None:
             return
 
         try:
-            saved = protected.save_extra_patterns(repo, text.splitlines())
+            saved = protected.save_extra_patterns(repo, patterns)
         except (ValueError, OSError) as exc:
             messagebox.showerror("Erro ao salvar", str(exc))
             return
