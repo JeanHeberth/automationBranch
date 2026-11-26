@@ -431,6 +431,7 @@ class LeftSidebar(ctk.CTkFrame):
                     font=self.fonts["item"],
                     padx=28,
                     pady=5,
+                    cursor="hand2",  # mãozinha: indica que a branch é clicável
                 )
                 label.pack(fill="x")
                 # Duplo clique ou menu de contexto fazem o checkout ("origin/feature/x").
