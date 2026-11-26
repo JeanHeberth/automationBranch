@@ -1,5 +1,6 @@
 import customtkinter as ctk
 
+from services.protected_branches_service import get_protected_patterns
 from ui.window_position import center_on_master
 from ui.center_panel import HoverTooltip
 from ui.theme import APP_COLORS
@@ -178,7 +179,7 @@ class DeleteBranchPopup(ctk.CTkToplevel):
 
         ctk.CTkLabel(
             helper_frame,
-            text="Protegidas automaticamente: main, master, develop, developer.",
+            text=f"Protegidas: {', '.join(get_protected_patterns())}.",
             text_color=APP_COLORS["muted"],
             font=ctk.CTkFont(size=11),
             justify="left",

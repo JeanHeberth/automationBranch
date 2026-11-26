@@ -7,12 +7,13 @@ from services import system_service as system
 from services.branch_delete_service import delete_local_branch, is_protected
 from services.branch_service import get_current_branch, get_local_and_remote_branches, is_git_repository
 from services.commit_service import is_last_commit_pushed
+from services import protected_branches_service as protected
 from services.git_runner import GitServiceError
 from services.pull_request_service import get_repo_owner_and_name
 from services.sync_service import git_pull
 from ui.actions_panel import ActionsPanel
 from ui.base_branch_popup import BaseBranchPopup
-from ui.dialogs import ask_string
+from ui.dialogs import ask_string, ask_text
 from ui.reflog_dialog import ReflogDialog
 from ui.search_dialog import SearchDialog
 from ui.tags_dialog import TagsDialog
@@ -44,6 +45,7 @@ class ActionsController:
             "rename_branch": self.rename_branch,
             "clean_merged": self.clean_merged,
             "manage_tags": self.manage_tags,
+            "protected_branches": self.protected_branches,
             "open_repo_web": self.open_repo_web,
             "open_branch_web": self.open_branch_web,
             "copy_repo_url": self.copy_repo_url,
@@ -541,6 +543,33 @@ class ActionsController:
         self._run(
             lambda: git_actions.create_tag(repo, name, message), created,
             "Criando tag...", "Erro ao criar tag",
+        )
+
+    def protected_branches(self):
+        repo = self._repo("configurar as branches protegidas")
+        if not repo:
+            return
+
+        defaults = ", ".join(protected.DEFAULT_PROTECTED)
+        text = ask_text(
+            self.w,
+            "Branches protegidas",
+            f"Sempre protegidas: {defaults}.\n"
+            "Acrescente outras, uma por linha (aceita * : release/*, hotfix/*, staging).\n"
+            "Apague tudo para voltar só às padrão. Vale apenas para este repositório.",
+            initialvalue="\n".join(protected.get_extra_patterns(repo)),
+        )
+        if text is None:
+            return
+
+        try:
+            saved = protected.save_extra_patterns(repo, text.splitlines())
+        except (ValueError, OSError) as exc:
+            messagebox.showerror("Erro ao salvar", str(exc))
+            return
+
+        self.w.set_status(
+            f"Branches protegidas atualizadas (+{len(saved)})." if saved else "Branches protegidas: só as padrão."
         )
 
     def manage_tags(self):

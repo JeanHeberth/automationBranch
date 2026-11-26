@@ -135,7 +135,7 @@ def rebase_onto(repo_path: str, branch: str) -> str:
         raise GitServiceError("Informe a branch de destino do rebase.")
     if branch == current:
         raise GitServiceError("Não dá para fazer rebase de uma branch nela mesma.")
-    if is_protected(current):
+    if is_protected(current, repo_path):
         raise GitServiceError(f"Não é permitido reescrever o histórico da branch protegida '{current}'.")
 
     return _run_integration(repo_path, ["rebase", branch])
@@ -171,7 +171,7 @@ def undo_last_commit(repo_path: str) -> str:
     """Desfaz o último commit mantendo as alterações em stage (git reset --soft HEAD~1)."""
     current = get_current_branch(repo_path)
 
-    if is_protected(current):
+    if is_protected(current, repo_path):
         raise GitServiceError(f"Não é permitido reescrever o histórico da branch protegida '{current}'.")
 
     try:
@@ -211,7 +211,7 @@ def redo_last_undo(repo_path: str) -> str:
     """Desfaz o "desfazer": traz de volta o commit removido por `undo_last_commit`."""
     current = get_current_branch(repo_path)
 
-    if is_protected(current):
+    if is_protected(current, repo_path):
         raise GitServiceError(f"Não é permitido reescrever o histórico da branch protegida '{current}'.")
 
     target = get_redo_target(repo_path)
@@ -251,7 +251,7 @@ def is_working_tree_clean(repo_path: str) -> bool:
 def reset_hard(repo_path: str, commit: str) -> str:
     current = get_current_branch(repo_path)
 
-    if is_protected(current):
+    if is_protected(current, repo_path):
         raise GitServiceError(f"Não é permitido reescrever o histórico da branch protegida '{current}'.")
 
     if not is_working_tree_clean(repo_path):
@@ -286,7 +286,7 @@ def create_branch_at(repo_path: str, name: str, commit: str) -> str:
 
 
 def rename_branch(repo_path: str, old_name: str, new_name: str) -> str:
-    if is_protected(old_name):
+    if is_protected(old_name, repo_path):
         raise GitServiceError(f"A branch '{old_name}' é protegida e não pode ser renomeada.")
 
     new_name = validate_ref_name(repo_path, new_name, "branch")
@@ -359,7 +359,7 @@ def get_merged_branches(repo_path: str, base: str) -> List[str]:
 
     return [
         name for name in (line.strip() for line in output.splitlines())
-        if name and name != base and name != current and not is_protected(name)
+        if name and name != base and name != current and not is_protected(name, repo_path)
     ]
 
 

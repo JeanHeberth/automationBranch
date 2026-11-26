@@ -20,6 +20,7 @@ MENU_SPEC = [
         ("Renomear branch atual…", "rename_branch", "edit.png"),
         ("Limpar branches mescladas…", "clean_merged", "delete_branch.png"),
         ("Gerenciar tags…", "manage_tags", "tag.png"),
+        ("Branches protegidas…", "protected_branches", "repo.png"),
         ("Reflog (histórico do HEAD)…", "reflog", "history.png"),
     ]),
     ("Repositório", [
