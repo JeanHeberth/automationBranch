@@ -53,3 +53,33 @@ def test_get_protected_remote_branches_fallback_main(monkeypatch):
     monkeypatch.setattr(branch_delete_service, "get_remote_branches", lambda repo: ["origin/feature/x"])
 
     assert branch_delete_service.get_protected_remote_branches("/repo") == ["main"]
+
+
+def _remotas(monkeypatch, *nomes):
+    monkeypatch.setattr(branch_delete_service, "get_remote_branches", lambda repo: [f"origin/{n}" for n in nomes])
+
+
+@pytest.mark.parametrize("atual", ["feature/x", "bugfix/y", "hotfix/z", "release/1.0"])
+def test_get_pr_base_branch_de_qualquer_branch_vai_para_develop(monkeypatch, atual):
+    _remotas(monkeypatch, "main", "develop", atual)
+
+    assert branch_delete_service.get_pr_base_branch("/repo", atual) == "develop"
+
+
+def test_get_pr_base_branch_da_develop_vai_para_main(monkeypatch):
+    _remotas(monkeypatch, "main", "develop")
+
+    assert branch_delete_service.get_pr_base_branch("/repo", "develop") == "main"
+
+
+def test_get_pr_base_branch_da_develop_usa_master_se_nao_tem_main(monkeypatch):
+    _remotas(monkeypatch, "master", "develop")
+
+    assert branch_delete_service.get_pr_base_branch("/repo", "develop") == "master"
+
+
+def test_get_pr_base_branch_sem_develop_no_remote_nao_cai_na_main(monkeypatch):
+    _remotas(monkeypatch, "main", "feature/x")
+
+    with pytest.raises(ValueError, match="develop"):
+        branch_delete_service.get_pr_base_branch("/repo", "feature/x")

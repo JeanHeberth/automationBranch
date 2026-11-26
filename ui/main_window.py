@@ -33,7 +33,7 @@ from services.branch_service import (
 )
 from services.branch_delete_service import (
     get_deletable_local_branches,
-    get_protected_remote_branches,
+    get_pr_base_branch,
     get_deletable_remote_branches,
     delete_local_branch,
     delete_remote_branch,
@@ -1038,12 +1038,17 @@ class MainWindow(ctk.CTk):
             return
 
         try:
-            options = get_protected_remote_branches(repo_path, exclude=current_branch)
+            # Base fixa (develop -> main): de qualquer branch o PR vai para a develop; da
+            # develop vai para a main. A tela mostra só essa opção, sem atalho para a main.
+            base = get_pr_base_branch(repo_path, current_branch)
         except GitServiceError as exc:
             messagebox.showerror("Erro ao listar branches", str(exc))
             return
+        except ValueError as exc:
+            messagebox.showwarning("Branch base indisponível", str(exc))
+            return
 
-        base_branch = BaseBranchPopup(self, options).get_selection()
+        base_branch = BaseBranchPopup(self, [base]).get_selection()
         if not base_branch:
             return
 

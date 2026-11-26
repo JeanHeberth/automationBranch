@@ -27,6 +27,29 @@ def get_protected_remote_branches(repo_path: str, exclude: str | None = None) ->
     return protegidas or [b for b in ["main"] if b != exclude]
 
 
+def get_pr_base_branch(repo_path: str, current_branch: str) -> str:
+    """Base única de um PR, pelo fluxo develop -> main: de qualquer branch o PR vai para
+    a develop; da própria develop vai para a main. Impede abrir PR direto na main.
+
+    Só vale se a base existir no remote; senão levanta ValueError dizendo qual falta.
+    """
+    nomes = {b.split("/", 1)[1] for b in get_remote_branches(repo_path) if "/" in b}
+
+    if current_branch.strip().lower() in ("develop", "developer"):
+        candidatas = ["main", "master"]
+    else:
+        candidatas = ["develop", "developer"]
+
+    for base in candidatas:
+        if base in nomes:
+            return base
+
+    raise ValueError(
+        f"A branch '{candidatas[0]}' não existe no remote; ela é a base do PR a partir de "
+        f"'{current_branch}'. Envie-a (push) ao remote antes de abrir o PR."
+    )
+
+
 def get_deletable_local_branches(repo_path: str) -> list[str]:
     current_branch = get_current_branch(repo_path)
     branches = get_local_branches(repo_path)
