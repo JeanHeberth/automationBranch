@@ -1,15 +1,18 @@
 from services.git_runner import run_git_command, GitServiceError
 from services.branch_service import get_local_branches, get_remote_branches, get_current_branch
 
-PROTECTED_BRANCHES = {"main", "master", "develop", "developer"}
+from services.protected_branches_service import DEFAULT_PROTECTED, is_protected as _is_protected
+
+# Padrão do app; cada repositório pode acrescentar mais (ver protected_branches_service).
+PROTECTED_BRANCHES = set(DEFAULT_PROTECTED)
 
 
 def normalize_branch_name(branch_name: str) -> str:
     return branch_name.strip()
 
 
-def is_protected(branch_name: str) -> bool:
-    return normalize_branch_name(branch_name).lower() in PROTECTED_BRANCHES
+def is_protected(branch_name: str, repo_path: str | None = None) -> bool:
+    return _is_protected(normalize_branch_name(branch_name), repo_path)
 
 
 def filter_deletable(branches: list[str]) -> list[str]:
@@ -58,7 +61,7 @@ def get_deletable_local_branches(repo_path: str) -> list[str]:
     for branch in branches:
         if branch == current_branch:
             continue
-        if is_protected(branch):
+        if is_protected(branch, repo_path):
             continue
         deletable.append(branch)
 
@@ -81,7 +84,7 @@ def get_deletable_remote_branches(repo_path: str) -> list[str]:
             continue
         branch = branch[len("origin/"):]
 
-        if is_protected(branch):
+        if is_protected(branch, repo_path):
             continue
 
         cleaned.append(branch)
@@ -95,7 +98,7 @@ def delete_local_branch(repo_path: str, branch_name: str) -> str:
     if not branch_name:
         raise GitServiceError("Informe o nome da branch.")
 
-    if is_protected(branch_name):
+    if is_protected(branch_name, repo_path):
         raise GitServiceError(f"A branch '{branch_name}' é protegida e não pode ser deletada.")
 
     current_branch = get_current_branch(repo_path)
@@ -111,7 +114,7 @@ def delete_remote_branch(repo_path: str, branch_name: str) -> str:
     if not branch_name:
         raise GitServiceError("Informe o nome da branch.")
 
-    if is_protected(branch_name):
+    if is_protected(branch_name, repo_path):
         raise GitServiceError(f"A branch '{branch_name}' é protegida e não pode ser deletada.")
 
     return run_git_command(repo_path, ["push", "origin", "--delete", branch_name])
