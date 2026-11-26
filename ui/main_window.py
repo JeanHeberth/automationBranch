@@ -28,6 +28,7 @@ from services.branch_service import (
     is_git_repository,
     get_current_branch,
     checkout_branch,
+    checkout_remote_branch,
     create_branch,
 )
 from services.branch_delete_service import (
@@ -142,6 +143,7 @@ class MainWindow(ctk.CTk):
         self.left_sidebar = LeftSidebar(
             self,
             on_branch_select=self.handle_branch_selected,
+            on_remote_branch_checkout=self.handle_remote_branch_checkout,
             on_open_pr=self.handle_open_pr_item,
             on_merge_pr=self.handle_merge_pr_item
         )
@@ -270,9 +272,7 @@ class MainWindow(ctk.CTk):
         threading.Thread(target=runner, daemon=True).start()
 
     def _checkout_from_search(self, branch_name: str, is_remote: bool):
-        # "origin/feature/x" vira "feature/x": o git cria a branch local rastreando a remota.
-        target = branch_name.split("/", 1)[1] if is_remote else branch_name
-        self.perform_branch_checkout(target)
+        self.perform_branch_checkout(branch_name, remote=is_remote)
 
     def _refresh_profile_ui(self):
         session = get_current_session()
@@ -649,7 +649,18 @@ class MainWindow(ctk.CTk):
                 else:
                     self.right_panel.set_stashes(snapshot.stashes)
 
-    def perform_branch_checkout(self, branch_name: str):
+    def handle_remote_branch_checkout(self, remote_ref: str):
+        self.perform_branch_checkout(remote_ref, remote=True)
+
+    @staticmethod
+    def _checkout_target(repo_path: str, branch_name: str, remote: bool):
+        """Local: `git checkout`. Remota ("origin/x"): cria/troca para a local rastreando-a."""
+        if remote:
+            checkout_remote_branch(repo_path, branch_name)
+        else:
+            checkout_branch(repo_path, branch_name)
+
+    def perform_branch_checkout(self, branch_name: str, remote: bool = False):
         if not self.selected_repo_path:
             messagebox.showwarning(
                 "Repositório não selecionado",
@@ -661,7 +672,7 @@ class MainWindow(ctk.CTk):
 
         def work():
             try:
-                checkout_branch(repo_path, branch_name)
+                self._checkout_target(repo_path, branch_name, remote)
             except GitServiceError as exc:
                 # Alterações locais (ou arquivos novos) que o checkout sobrescreveria:
                 # oferecemos guardar em stash.
@@ -672,7 +683,7 @@ class MainWindow(ctk.CTk):
 
         def done(result):
             if isinstance(result, dict):
-                self._offer_stash_and_checkout(repo_path, branch_name, result["blocked"])
+                self._offer_stash_and_checkout(repo_path, branch_name, result["blocked"], remote)
                 return
             # A branch atual sai do próprio snapshot (for-each-ref): sem `git branch --show-current`.
             self.sync_branch_ui(
@@ -689,7 +700,7 @@ class MainWindow(ctk.CTk):
             error_status=f"Falha ao trocar para a branch: {branch_name}",
         )
 
-    def _offer_stash_and_checkout(self, repo_path: str, branch_name: str, git_message: str):
+    def _offer_stash_and_checkout(self, repo_path: str, branch_name: str, git_message: str, remote: bool = False):
         # O checkout falhou sem alterar nada; a UI ainda mostra a branch de destino, então ressincroniza.
         self.sync_branch_ui()
 
@@ -703,7 +714,7 @@ class MainWindow(ctk.CTk):
 
         def work():
             stash_changes(repo_path, f"Antes de trocar para {branch_name}")
-            checkout_branch(repo_path, branch_name)
+            self._checkout_target(repo_path, branch_name, remote)
 
         self._run_in_background(
             work,

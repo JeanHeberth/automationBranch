@@ -2,12 +2,14 @@ import pytest
 
 from services import branch_service
 from services.branch_service import (
+    checkout_remote_branch,
     create_branch,
     get_current_branch,
     get_local_branches,
     get_remote_branches,
     is_detached_head,
     is_git_repository,
+    split_remote_ref,
 )
 from services.git_runner import run_git_command
 
@@ -151,3 +153,65 @@ def test_branch_overview_sem_remote_buscado_volta_vazio(git_repo):
 
     # Remote só na configuração (sem refs buscados): o snapshot confirma com `git remote`.
     assert get_branch_overview(git_repo)[2] == []
+
+
+@pytest.fixture
+def repo_com_remoto(git_repo, tmp_path):
+    """Repo clonado de um bare "origin" que tem a branch feature/x e um segundo remote "upstream"."""
+    bare = str(tmp_path / "origin.git")
+    run_git_command(git_repo, ["init", "--bare", bare])
+    run_git_command(git_repo, ["remote", "add", "origin", bare])
+    run_git_command(git_repo, ["push", "origin", "main"])
+    run_git_command(git_repo, ["checkout", "-b", "feature/x"])
+    run_git_command(git_repo, ["push", "origin", "feature/x"])
+    run_git_command(git_repo, ["checkout", "main"])
+    run_git_command(git_repo, ["branch", "-D", "feature/x"])
+    run_git_command(git_repo, ["fetch", "origin"])
+    return git_repo
+
+
+def test_split_remote_ref_usa_remotes_configurados(repo_com_remoto):
+    assert split_remote_ref(repo_com_remoto, "origin/feature/x") == ("origin", "feature/x")
+
+
+def test_split_remote_ref_aceita_remote_com_barra_no_nome(repo_com_remoto, tmp_path):
+    run_git_command(repo_com_remoto, ["remote", "add", "team/fork", str(tmp_path / "origin.git")])
+    assert split_remote_ref(repo_com_remoto, "team/fork/y") == ("team/fork", "y")
+
+
+def test_split_remote_ref_rejeita_ref_que_nao_e_remota(repo_com_remoto):
+    with pytest.raises(ValueError):
+        split_remote_ref(repo_com_remoto, "feature/x")
+
+
+def test_checkout_remote_branch_cria_local_com_tracking(repo_com_remoto):
+    assert checkout_remote_branch(repo_com_remoto, "origin/feature/x") == "feature/x"
+
+    assert get_current_branch(repo_com_remoto) == "feature/x"
+    assert is_detached_head(repo_com_remoto) is False
+    upstream = run_git_command(repo_com_remoto, ["rev-parse", "--abbrev-ref", "feature/x@{upstream}"])
+    assert upstream == "origin/feature/x"
+
+
+def test_checkout_remote_branch_com_dois_remotes_usa_o_escolhido(repo_com_remoto, tmp_path):
+    outro = str(tmp_path / "upstream.git")
+    run_git_command(repo_com_remoto, ["init", "--bare", outro])
+    run_git_command(repo_com_remoto, ["remote", "add", "upstream", outro])
+    run_git_command(repo_com_remoto, ["push", "upstream", "origin/feature/x:refs/heads/feature/x"])
+    run_git_command(repo_com_remoto, ["fetch", "upstream"])
+
+    checkout_remote_branch(repo_com_remoto, "upstream/feature/x")
+
+    upstream = run_git_command(repo_com_remoto, ["rev-parse", "--abbrev-ref", "feature/x@{upstream}"])
+    assert upstream == "upstream/feature/x"
+
+
+def test_checkout_remote_branch_com_local_existente_so_troca(repo_com_remoto):
+    run_git_command(repo_com_remoto, ["branch", "feature/x", "main"])
+
+    assert checkout_remote_branch(repo_com_remoto, "origin/feature/x") == "feature/x"
+
+    assert get_current_branch(repo_com_remoto) == "feature/x"
+    # Não mexe no tracking de uma local que já existia.
+    with pytest.raises(Exception):
+        run_git_command(repo_com_remoto, ["rev-parse", "--abbrev-ref", "feature/x@{upstream}"])

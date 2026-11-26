@@ -126,6 +126,44 @@ def checkout_branch(repo_path: str, branch_name: str) -> str:
     return run_git_command(repo_path, ["checkout", branch_name])
 
 
+def split_remote_ref(repo_path: str, remote_ref: str) -> tuple[str, str]:
+    """Separa "origin/feature/x" em ("origin", "feature/x").
+
+    Confere contra os remotes configurados (o nome do remote também pode ter "/"),
+    preferindo o mais longo; é o que evita adivinhar com `split("/", 1)`.
+    """
+    for remote in sorted(get_remotes(repo_path), key=len, reverse=True):
+        prefix = f"{remote}/"
+        if remote_ref.startswith(prefix) and len(remote_ref) > len(prefix):
+            return remote, remote_ref[len(prefix):]
+    raise ValueError(f"'{remote_ref}' não é uma branch remota de nenhum remote configurado.")
+
+
+def local_branch_exists(repo_path: str, branch_name: str) -> bool:
+    try:
+        run_git_command(repo_path, ["show-ref", "--verify", "--quiet", f"refs/heads/{branch_name}"])
+        return True
+    except GitServiceError:
+        return False
+
+
+def checkout_remote_branch(repo_path: str, remote_ref: str) -> str:
+    """Faz checkout de uma branch remota ("origin/feature/x") e devolve o nome da branch local.
+
+    Se já existe uma local com esse nome, só troca para ela (sem mexer no tracking).
+    Caso contrário cria `feature/x` rastreando exatamente `remote_ref`, o que também
+    resolve a ambiguidade de a mesma branch existir em mais de um remote e evita HEAD destacado.
+    """
+    _remote, local_name = split_remote_ref(repo_path, remote_ref)
+
+    if local_branch_exists(repo_path, local_name):
+        run_git_command(repo_path, ["checkout", local_name])
+    else:
+        run_git_command(repo_path, ["checkout", "--track", "-b", local_name, remote_ref])
+
+    return local_name
+
+
 def create_branch(repo_path: str, branch_name: str) -> str:
     branch_name = branch_name.strip()
 
